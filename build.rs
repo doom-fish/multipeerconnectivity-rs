@@ -10,11 +10,25 @@ fn main() {
 
     println!("cargo:rustc-link-lib=framework=MultipeerConnectivity");
     println!("cargo:rustc-link-lib=framework=Foundation");
+    println!("cargo:rustc-link-lib=framework=AppKit");
 
     let swift_dir = "swift-bridge";
     let out_dir = env::var("OUT_DIR").expect("OUT_DIR");
     let swift_build_dir = format!("{out_dir}/swift-build");
     println!("cargo:rerun-if-changed={swift_dir}");
+
+    if let Ok(output) = Command::new("swiftlint")
+        .args(["lint"])
+        .current_dir(swift_dir)
+        .output()
+    {
+        if !output.status.success() {
+            eprintln!(
+                "SwiftLint warnings:\n{}",
+                String::from_utf8_lossy(&output.stdout)
+            );
+        }
+    }
 
     let arch = env::var("CARGO_CFG_TARGET_ARCH").unwrap_or_default();
     let triple = match arch.as_str() {

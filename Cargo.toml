@@ -1,11 +1,11 @@
 [package]
-name = "multipeerconnectivity"
-version = "0.1.0"
+name = "multipeerconnectivity-rs"
+version = "0.2.0"
 edition = "2021"
 license = "MIT OR Apache-2.0"
 homepage = "https://github.com/doom-fish/multipeerconnectivity-rs"
 repository = "https://github.com/doom-fish/multipeerconnectivity-rs"
-description = "Safe Rust bindings for Apple's MultipeerConnectivity framework — peer-to-peer ad-hoc networking on macOS"
+description = "Safe Rust bindings for Apple's MultipeerConnectivity framework — peer IDs, sessions, browser/advertiser helpers, assistant UI, and browser controller on macOS"
 authors = ["Per Johansson <per@doom.fish>"]
 keywords = ["multipeer", "bonjour", "p2p", "networking", "macos"]
 categories = ["api-bindings", "os::macos-apis", "network-programming"]
@@ -15,6 +15,7 @@ build = "build.rs"
 include = [
     "src/**/*",
     "examples/**/*",
+    "tests/**/*",
     "swift-bridge/Package.swift",
     "swift-bridge/Sources/**/*",
     "build.rs",
@@ -22,6 +23,7 @@ include = [
     "README.md",
     "LICENSE-*",
     "CHANGELOG.md",
+    "COVERAGE.md",
 ]
 
 [lints.rust]
@@ -46,9 +48,6 @@ rustdoc-args = ["--cfg", "docsrs"]
 
 [badges]
 maintenance = { status = "actively-developed" }
-
-[[example]]
-name = "01_smoke"
 
 [profile.release]
 debug = "full"
