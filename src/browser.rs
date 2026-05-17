@@ -7,7 +7,9 @@ use std::ffi::{CStr, CString};
 use std::fmt;
 use std::sync::Mutex;
 
-use crate::error::{copy_and_free_string, take_framework_error, FrameworkError, MultipeerError, Result};
+use crate::error::{
+    copy_and_free_string, take_framework_error, FrameworkError, MultipeerError, Result,
+};
 use crate::ffi;
 use crate::peer::PeerId;
 use crate::session::Session;
@@ -32,8 +34,7 @@ fn validate_service_type(service_type: &str) -> Result<CString> {
         .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
     {
         return Err(MultipeerError::InvalidArgument(
-            "service type must contain only lowercase ASCII letters, digits, or hyphens"
-                .into(),
+            "service type must contain only lowercase ASCII letters, digits, or hyphens".into(),
         ));
     }
     CString::new(service_type).map_err(|_| {

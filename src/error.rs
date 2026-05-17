@@ -184,10 +184,14 @@ fn take_bridge_error_info(ptr: *mut c_void) -> BridgeErrorInfo {
 pub(crate) fn take_error(ptr: *mut c_void) -> MultipeerError {
     let info = take_bridge_error_info(ptr);
     match info.kind {
-        ffi::error::MPC_ERROR_KIND_INVALID_ARGUMENT => MultipeerError::InvalidArgument(info.description),
-        ffi::error::MPC_ERROR_KIND_FRAMEWORK => {
-            MultipeerError::Framework(FrameworkError::new(info.domain, info.code, info.description))
+        ffi::error::MPC_ERROR_KIND_INVALID_ARGUMENT => {
+            MultipeerError::InvalidArgument(info.description)
         }
+        ffi::error::MPC_ERROR_KIND_FRAMEWORK => MultipeerError::Framework(FrameworkError::new(
+            info.domain,
+            info.code,
+            info.description,
+        )),
         _ => MultipeerError::OperationFailed(info.description),
     }
 }

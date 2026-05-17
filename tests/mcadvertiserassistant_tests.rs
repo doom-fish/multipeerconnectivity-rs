@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use multipeerconnectivity::{AdvertiserAssistant, EncryptionPreference, PeerId, Session, Result};
+use multipeerconnectivity::{AdvertiserAssistant, EncryptionPreference, PeerId, Result, Session};
 
 #[test]
 #[ignore = "MCAdvertiserAssistant is a UI convenience type; run manually from a main-thread harness"]
@@ -12,7 +12,10 @@ fn advertiser_assistant_exposes_properties() -> Result<()> {
     let mut assistant = AdvertiserAssistant::new("doom-chat", Some(&discovery), &session)?;
 
     assert_eq!(assistant.service_type(), "doom-chat");
-    assert_eq!(assistant.session().my_peer_id().display_name(), "doom-fish-assistant");
+    assert_eq!(
+        assistant.session().my_peer_id().display_name(),
+        "doom-fish-assistant"
+    );
     assistant.clear_delegate();
     Ok(())
 }

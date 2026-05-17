@@ -1,19 +1,13 @@
 use core::ffi::{c_char, c_void};
 
 pub type SessionStateCallback = unsafe extern "C" fn(*mut c_void, *mut c_void, i32);
-pub type SessionDataCallback =
-    unsafe extern "C" fn(*mut c_void, *mut c_void, *const c_void, usize);
+pub type SessionDataCallback = unsafe extern "C" fn(*mut c_void, *mut c_void, *const c_void, usize);
 pub type SessionStreamCallback =
     unsafe extern "C" fn(*mut c_void, *mut c_void, *const c_char, *mut c_void);
 pub type SessionResourceStartCallback =
     unsafe extern "C" fn(*mut c_void, *mut c_void, *const c_char, *mut c_void);
-pub type SessionResourceFinishCallback = unsafe extern "C" fn(
-    *mut c_void,
-    *mut c_void,
-    *const c_char,
-    *const c_char,
-    *mut c_void,
-);
+pub type SessionResourceFinishCallback =
+    unsafe extern "C" fn(*mut c_void, *mut c_void, *const c_char, *const c_char, *mut c_void);
 pub type SessionCertificateCallback =
     unsafe extern "C" fn(*mut c_void, *mut c_void, *mut c_void, usize) -> bool;
 pub type ResourceSendCompletionCallback = unsafe extern "C" fn(*mut c_void, *mut c_void);

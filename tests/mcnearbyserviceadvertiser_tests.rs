@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 
-use multipeerconnectivity::{EncryptionPreference, NearbyServiceAdvertiser, PeerId, Session, Result};
+use multipeerconnectivity::{
+    EncryptionPreference, NearbyServiceAdvertiser, PeerId, Result, Session,
+};
 
 #[test]
 fn advertiser_creation_and_delegate_setup_work() -> Result<()> {
@@ -10,9 +12,15 @@ fn advertiser_creation_and_delegate_setup_work() -> Result<()> {
     discovery.insert("role".to_string(), "host".to_string());
     let mut advertiser = NearbyServiceAdvertiser::new(&peer, Some(&discovery), "doom-chat")?;
 
-    assert_eq!(advertiser.my_peer_id().display_name(), "doom-fish-advertiser");
+    assert_eq!(
+        advertiser.my_peer_id().display_name(),
+        "doom-fish-advertiser"
+    );
     assert_eq!(advertiser.service_type(), "doom-chat");
-    assert_eq!(advertiser.discovery_info().unwrap().get("role"), Some(&"host".to_string()));
+    assert_eq!(
+        advertiser.discovery_info().unwrap().get("role"),
+        Some(&"host".to_string())
+    );
     advertiser.set_delegate(Some(&session), |_peer, _context| false);
     advertiser.clear_delegate();
     Ok(())

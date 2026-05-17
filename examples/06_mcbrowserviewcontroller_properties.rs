@@ -7,7 +7,10 @@ fn main() -> Result<()> {
     controller.set_minimum_number_of_peers(session_minimum_number_of_peers());
     controller.set_maximum_number_of_peers(session_maximum_number_of_peers());
 
-    println!("controller browser service: {}", controller.browser().service_type());
+    println!(
+        "controller browser service: {}",
+        controller.browser().service_type()
+    );
     println!(
         "controller min/max: {}/{}",
         controller.minimum_number_of_peers(),

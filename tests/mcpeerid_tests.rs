@@ -12,7 +12,13 @@ fn peer_id_roundtrip_archives() -> Result<()> {
 
 #[test]
 fn peer_id_rejects_invalid_display_names() {
-    assert!(matches!(PeerId::new(""), Err(MultipeerError::InvalidArgument(_))));
+    assert!(matches!(
+        PeerId::new(""),
+        Err(MultipeerError::InvalidArgument(_))
+    ));
     let too_long = "x".repeat(64);
-    assert!(matches!(PeerId::new(too_long), Err(MultipeerError::InvalidArgument(_))));
+    assert!(matches!(
+        PeerId::new(too_long),
+        Err(MultipeerError::InvalidArgument(_))
+    ));
 }

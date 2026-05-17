@@ -8,7 +8,10 @@ fn main() -> Result<()> {
     discovery.insert("role".to_string(), "host".to_string());
     let advertiser = NearbyServiceAdvertiser::new(&peer, Some(&discovery), "doom-chat")?;
 
-    println!("advertiser peer: {}", advertiser.my_peer_id().display_name());
+    println!(
+        "advertiser peer: {}",
+        advertiser.my_peer_id().display_name()
+    );
     println!("advertiser service type: {}", advertiser.service_type());
     println!(
         "advertiser discovery keys: {}",

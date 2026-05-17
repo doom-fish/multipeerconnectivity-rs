@@ -29,8 +29,7 @@ fn validate_service_type(service_type: &str) -> Result<CString> {
         .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
     {
         return Err(MultipeerError::InvalidArgument(
-            "service type must contain only lowercase ASCII letters, digits, or hyphens"
-                .into(),
+            "service type must contain only lowercase ASCII letters, digits, or hyphens".into(),
         ));
     }
     CString::new(service_type).map_err(|_| {
@@ -134,7 +133,9 @@ impl AdvertiserAssistant {
 
     #[must_use]
     pub fn session(&self) -> Session {
-        let raw = unsafe { ffi::advertiser_assistant::mpc_advertiser_assistant_copy_session(self.raw.as_ptr()) };
+        let raw = unsafe {
+            ffi::advertiser_assistant::mpc_advertiser_assistant_copy_session(self.raw.as_ptr())
+        };
         unsafe { Session::from_owned_raw(raw) }
     }
 
@@ -198,7 +199,9 @@ impl AdvertiserAssistant {
     pub fn clear_delegate(&mut self) {
         if let Some(state) = self.delegate_state.take() {
             unsafe {
-                ffi::advertiser_assistant::mpc_advertiser_assistant_clear_delegate(self.raw.as_ptr());
+                ffi::advertiser_assistant::mpc_advertiser_assistant_clear_delegate(
+                    self.raw.as_ptr(),
+                );
                 drop(Box::from_raw(state.as_ptr()));
             }
         }

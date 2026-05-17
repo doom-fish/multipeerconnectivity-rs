@@ -2,7 +2,7 @@
     clippy::missing_errors_doc,
     clippy::missing_panics_doc,
     clippy::must_use_candidate,
-    clippy::struct_field_names,
+    clippy::struct_field_names
 )]
 
 use core::ffi::c_void;
@@ -38,8 +38,7 @@ fn validate_service_type(service_type: &str) -> Result<CString> {
         .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
     {
         return Err(MultipeerError::InvalidArgument(
-            "service type must contain only lowercase ASCII letters, digits, or hyphens"
-                .into(),
+            "service type must contain only lowercase ASCII letters, digits, or hyphens".into(),
         ));
     }
     CString::new(service_type).map_err(|_| {
@@ -107,10 +106,7 @@ pub struct BrowserViewController {
 }
 
 impl BrowserViewController {
-    pub fn new_with_service_type(
-        service_type: impl AsRef<str>,
-        session: &Session,
-    ) -> Result<Self> {
+    pub fn new_with_service_type(service_type: impl AsRef<str>, session: &Session) -> Result<Self> {
         let service_type = validate_service_type(service_type.as_ref())?;
         let raw = unsafe {
             ffi::browser_view_controller::mpc_browser_view_controller_create_with_service_type(
@@ -150,13 +146,21 @@ impl BrowserViewController {
 
     #[must_use]
     pub fn browser(&self) -> NearbyServiceBrowser {
-        let raw = unsafe { ffi::browser_view_controller::mpc_browser_view_controller_copy_browser(self.raw.as_ptr()) };
+        let raw = unsafe {
+            ffi::browser_view_controller::mpc_browser_view_controller_copy_browser(
+                self.raw.as_ptr(),
+            )
+        };
         unsafe { NearbyServiceBrowser::from_owned_raw(raw) }
     }
 
     #[must_use]
     pub fn session(&self) -> Session {
-        let raw = unsafe { ffi::browser_view_controller::mpc_browser_view_controller_copy_session(self.raw.as_ptr()) };
+        let raw = unsafe {
+            ffi::browser_view_controller::mpc_browser_view_controller_copy_session(
+                self.raw.as_ptr(),
+            )
+        };
         unsafe { Session::from_owned_raw(raw) }
     }
 

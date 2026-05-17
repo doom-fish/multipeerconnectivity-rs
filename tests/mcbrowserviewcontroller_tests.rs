@@ -1,6 +1,6 @@
 use multipeerconnectivity::{
     session_maximum_number_of_peers, session_minimum_number_of_peers, BrowserViewController,
-    EncryptionPreference, PeerId, Session, Result,
+    EncryptionPreference, PeerId, Result, Session,
 };
 
 #[test]
@@ -13,7 +13,10 @@ fn browser_view_controller_roundtrips_properties() -> Result<()> {
     controller.set_minimum_number_of_peers(session_minimum_number_of_peers());
     controller.set_maximum_number_of_peers(session_maximum_number_of_peers());
     assert_eq!(controller.browser().service_type(), "doom-chat");
-    assert_eq!(controller.session().my_peer_id().display_name(), "doom-fish-ui");
+    assert_eq!(
+        controller.session().my_peer_id().display_name(),
+        "doom-fish-ui"
+    );
     assert!(controller.maximum_number_of_peers() >= controller.minimum_number_of_peers());
     Ok(())
 }
