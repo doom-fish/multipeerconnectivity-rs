@@ -1,7 +1,7 @@
 #![allow(
     clippy::missing_errors_doc,
     clippy::missing_safety_doc,
-    clippy::struct_field_names,
+    clippy::struct_field_names
 )]
 
 use core::ffi::{c_char, c_void};
@@ -67,7 +67,7 @@ pub enum SessionState {
 }
 
 impl SessionState {
-    const fn from_raw(value: i32) -> Self {
+    pub(crate) const fn from_raw(value: i32) -> Self {
         match value {
             0 => Self::NotConnected,
             1 => Self::Connecting,
@@ -117,7 +117,8 @@ impl Drop for SecurityIdentityItem {
 
 impl fmt::Debug for SecurityIdentityItem {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("SecurityIdentityItem").finish_non_exhaustive()
+        f.debug_struct("SecurityIdentityItem")
+            .finish_non_exhaustive()
     }
 }
 
@@ -258,8 +259,8 @@ impl Session {
         encryption_preference: EncryptionPreference,
     ) -> Result<Self> {
         let mut error = ptr::null_mut();
-        let (identity_ptr, identity_len) = security_identity
-            .map_or((ptr::null(), 0), |items| (items.as_ptr(), items.len()));
+        let (identity_ptr, identity_len) =
+            security_identity.map_or((ptr::null(), 0), |items| (items.as_ptr(), items.len()));
         let raw = ffi::session::mpc_session_create_with_identity(
             peer.as_ptr(),
             identity_ptr,
@@ -292,7 +293,11 @@ impl Session {
         let mut array = ptr::null_mut();
         let mut count = 0usize;
         unsafe {
-            ffi::session::mpc_session_copy_security_identity(self.raw.as_ptr(), &mut array, &mut count);
+            ffi::session::mpc_session_copy_security_identity(
+                self.raw.as_ptr(),
+                &mut array,
+                &mut count,
+            );
         };
         take_handle_array(array, count, |raw| unsafe {
             SecurityIdentityItem::from_owned_raw(raw)
@@ -311,17 +316,16 @@ impl Session {
         let mut array = ptr::null_mut();
         let mut count = 0usize;
         unsafe {
-            ffi::session::mpc_session_copy_connected_peers(self.raw.as_ptr(), &mut array, &mut count);
+            ffi::session::mpc_session_copy_connected_peers(
+                self.raw.as_ptr(),
+                &mut array,
+                &mut count,
+            );
         };
         take_handle_array(array, count, |raw| unsafe { PeerId::from_owned_raw(raw) })
     }
 
-    pub fn send(
-        &self,
-        data: &[u8],
-        peers: &[&PeerId],
-        mode: SessionSendDataMode,
-    ) -> Result<()> {
+    pub fn send(&self, data: &[u8], peers: &[&PeerId], mode: SessionSendDataMode) -> Result<()> {
         if peers.is_empty() {
             return Err(MultipeerError::InvalidArgument(
                 "send requires at least one destination peer".into(),
@@ -593,6 +597,15 @@ impl Drop for ResourceTransfer {
     }
 }
 
+impl fmt::Debug for ResourceTransfer {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ResourceTransfer")
+            .field("fraction_completed", &self.fraction_completed())
+            .field("is_finished", &self.is_finished())
+            .finish()
+    }
+}
+
 pub struct OutputStream {
     raw: NonNull<c_void>,
 }
@@ -680,6 +693,14 @@ impl InputStream {
 impl Drop for InputStream {
     fn drop(&mut self) {
         unsafe { ffi::core::mpc_object_release(self.raw.as_ptr()) };
+    }
+}
+
+impl fmt::Debug for InputStream {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("InputStream")
+            .field("has_bytes_available", &self.has_bytes_available())
+            .finish()
     }
 }
 

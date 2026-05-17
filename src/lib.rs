@@ -6,6 +6,9 @@ compile_error!("multipeerconnectivity only supports macOS");
 
 pub mod advertiser;
 pub mod advertiser_assistant;
+#[cfg(feature = "async")]
+#[cfg_attr(docsrs, doc(cfg(feature = "async")))]
+pub mod async_api;
 pub mod browser;
 pub mod browser_view_controller;
 pub mod error;
@@ -13,7 +16,9 @@ pub mod ffi;
 pub mod peer;
 pub mod session;
 
-pub use advertiser::{InvitationResponse, NearbyServiceAdvertiser, NearbyServiceAdvertiserDelegate};
+pub use advertiser::{
+    InvitationResponse, NearbyServiceAdvertiser, NearbyServiceAdvertiserDelegate,
+};
 pub use advertiser_assistant::{AdvertiserAssistant, AdvertiserAssistantDelegate};
 pub use browser::{NearbyServiceBrowser, NearbyServiceBrowserDelegate};
 pub use browser_view_controller::{BrowserViewController, BrowserViewControllerDelegate};

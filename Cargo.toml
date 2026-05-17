@@ -1,6 +1,6 @@
 [package]
 name = "multipeerconnectivity-rs"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 license = "MIT OR Apache-2.0"
 homepage = "https://github.com/doom-fish/multipeerconnectivity-rs"
@@ -37,8 +37,16 @@ cargo = { level = "warn", priority = -1 }
 name = "multipeerconnectivity"
 crate-type = ["lib"]
 
+[features]
+default = []
+async = []
+
 [dependencies]
+doom-fish-utils = { path = "../doom-fish-utils", version = "0.1" }
 serde_json = "1"
+
+[dev-dependencies]
+pollster = "0.3"
 
 [package.metadata.docs.rs]
 all-features = true

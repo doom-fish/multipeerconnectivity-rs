@@ -2,7 +2,7 @@
 
 Safe Rust bindings for Apple's [MultipeerConnectivity](https://developer.apple.com/documentation/multipeerconnectivity) framework on macOS — peer IDs, sessions, nearby browser/advertiser APIs, advertiser assistant, browser view controller, and typed `MCError` handling.
 
-> **Status:** experimental. v0.2 covers the public MultipeerConnectivity surface for `MCPeerID`, `MCSession`, `MCNearbyServiceAdvertiser`, `MCNearbyServiceBrowser`, `MCAdvertiserAssistant`, `MCBrowserViewController`, and `MCError`.
+> **Status:** experimental. v0.3 covers the public MultipeerConnectivity surface for `MCPeerID`, `MCSession`, `MCNearbyServiceAdvertiser`, `MCNearbyServiceBrowser`, `MCAdvertiserAssistant`, `MCBrowserViewController`, `MCError`, and Tier-2 async event streams.
 
 ## Package vs crate name
 
@@ -26,6 +26,36 @@ fn main() -> Result<()> {
 }
 ```
 
+## Async API
+
+Enable the optional `async` Cargo feature to access executor-agnostic event streams backed by `doom-fish-utils::stream::BoundedAsyncStream`.
+
+```rust
+# #[cfg(feature = "async")]
+# {
+use multipeerconnectivity::{EncryptionPreference, PeerId, Session};
+use multipeerconnectivity::async_api::SessionEventStream;
+
+# fn demo() -> multipeerconnectivity::Result<()> {
+let peer = PeerId::new("async-demo")?;
+let session = Session::new(&peer, EncryptionPreference::Optional)?;
+let stream = SessionEventStream::subscribe_default(&session);
+assert!(!stream.is_closed());
+# Ok(())
+# }
+# }
+```
+
+The feature adds `SessionEventStream`, `BrowserEventStream`, and `AdvertiserEventStream`. Each stream unsubscribes automatically when dropped.
+
+Async examples:
+
+```bash
+cargo run --example 08_async_session_stream --features async
+cargo run --example 09_async_browser_stream --features async
+cargo run --example 10_async_advertiser_stream --features async
+```
+
 ## Covered areas
 
 - `MCPeerID` creation, display name access, and `NSSecureCoding` archive/unarchive helpers
@@ -35,6 +65,7 @@ fn main() -> Result<()> {
 - `MCAdvertiserAssistant` construction, property access, start/stop, and invitation presentation callbacks
 - `MCBrowserViewController` construction, browser/session access, peer-limit tuning, and delegate callbacks
 - `MCError` domain lookup plus typed `MCErrorCode` mapping
+- Tier-2 async event streams for session, browser, and advertiser delegates
 
 ## Delegate callbacks
 
@@ -50,6 +81,9 @@ cargo run --example 04_mcnearbyservicebrowser_properties
 cargo run --example 05_mcadvertiserassistant_properties
 cargo run --example 06_mcbrowserviewcontroller_properties
 cargo run --example 07_mcerror_domain
+cargo run --example 08_async_session_stream --features async
+cargo run --example 09_async_browser_stream --features async
+cargo run --example 10_async_advertiser_stream --features async
 ```
 
 ## Notes

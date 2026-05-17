@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.3.0
+
+- Added `async` Cargo feature with `src/async_api.rs` module providing Tier-2
+  async event streams backed by `doom-fish-utils::BoundedAsyncStream`.
+- Added `SessionEventStream` wrapping all six `MCSessionDelegate` callbacks
+  (state change, data received, stream received, resource started/finished,
+  certificate received).
+- Added `BrowserEventStream` wrapping all three `MCNearbyServiceBrowserDelegate`
+  callbacks (found peer, lost peer, did-not-start).
+- Added `AdvertiserEventStream` wrapping both `MCNearbyServiceAdvertiserDelegate`
+  callbacks (received invitation, did-not-start), with an `InvitationHandle`
+  RAII type for accept/decline responses.
+- Added three examples: `08_async_session_stream`, `09_async_browser_stream`,
+  `10_async_advertiser_stream`.
+- All streams uninstall their delegate and close the event channel on drop.
+
 ## 0.2.0
 
 - Renamed the Cargo package to `multipeerconnectivity-rs` while keeping the Rust crate name `multipeerconnectivity`.

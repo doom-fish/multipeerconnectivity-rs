@@ -7,7 +7,9 @@ use std::ffi::CString;
 use std::fmt;
 use std::sync::Mutex;
 
-use crate::error::{copy_and_free_string, take_framework_error, FrameworkError, MultipeerError, Result};
+use crate::error::{
+    copy_and_free_string, take_framework_error, FrameworkError, MultipeerError, Result,
+};
 use crate::ffi;
 use crate::peer::PeerId;
 use crate::session::Session;
@@ -51,8 +53,7 @@ fn validate_service_type(service_type: &str) -> Result<CString> {
         .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
     {
         return Err(MultipeerError::InvalidArgument(
-            "service type must contain only lowercase ASCII letters, digits, or hyphens"
-                .into(),
+            "service type must contain only lowercase ASCII letters, digits, or hyphens".into(),
         ));
     }
     CString::new(service_type).map_err(|_| {
@@ -168,7 +169,8 @@ impl NearbyServiceAdvertiser {
 
     #[must_use]
     pub fn discovery_info(&self) -> Option<HashMap<String, String>> {
-        let string = unsafe { ffi::advertiser::mpc_advertiser_discovery_info_json(self.raw.as_ptr()) };
+        let string =
+            unsafe { ffi::advertiser::mpc_advertiser_discovery_info_json(self.raw.as_ptr()) };
         if string.is_null() {
             return None;
         }
@@ -198,10 +200,11 @@ impl NearbyServiceAdvertiser {
         self.set_callbacks(NearbyServiceAdvertiserDelegate::new().on_invitation(
             move |peer, payload| {
                 if on_invitation(peer, payload) {
-                    invitation_session.as_ref().map_or(
-                        InvitationResponse::Decline,
-                        |session| InvitationResponse::Accept(session.cloned_session()),
-                    )
+                    invitation_session
+                        .as_ref()
+                        .map_or(InvitationResponse::Decline, |session| {
+                            InvitationResponse::Accept(session.cloned_session())
+                        })
                 } else {
                     InvitationResponse::Decline
                 }
@@ -238,6 +241,11 @@ impl NearbyServiceAdvertiser {
                 drop(Box::from_raw(state.as_ptr()));
             }
         }
+    }
+
+    #[cfg(feature = "async")]
+    pub(crate) const fn as_ptr(&self) -> *mut c_void {
+        self.raw.as_ptr()
     }
 }
 
@@ -278,7 +286,10 @@ unsafe extern "C" fn advertiser_invitation_trampoline(
     let payload = if context_bytes.is_null() || context_length == 0 {
         None
     } else {
-        Some(unsafe { std::slice::from_raw_parts(context_bytes.cast::<u8>(), context_length) }.to_vec())
+        Some(
+            unsafe { std::slice::from_raw_parts(context_bytes.cast::<u8>(), context_length) }
+                .to_vec(),
+        )
     };
     if let Ok(mut callbacks) = unsafe { context.as_ref() }.callbacks.lock() {
         if let Some(callback) = callbacks.on_invitation.as_mut() {
