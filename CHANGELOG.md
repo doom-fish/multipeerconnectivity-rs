@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.1
+
+- Added `catch_user_panic` wrappers to all `extern "C"` trampolines to prevent
+  panics from unwinding across the FFI boundary into Swift (UB).
+- Fixed `doom-fish-utils` version range to `>=0.1, <0.3` per workspace hygiene rules.
+
 ## 0.3.0
 
 - Added `async` Cargo feature with `src/async_api.rs` module providing Tier-2

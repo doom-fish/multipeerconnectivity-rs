@@ -7,6 +7,8 @@ use std::ffi::{CStr, CString};
 use std::fmt;
 use std::sync::Mutex;
 
+use doom_fish_utils::panic_safe::catch_user_panic;
+
 use crate::error::{
     copy_and_free_string, take_framework_error, FrameworkError, MultipeerError, Result,
 };
@@ -252,7 +254,7 @@ unsafe extern "C" fn browser_found_trampoline(
     };
     if let Ok(mut callbacks) = unsafe { context.as_ref() }.callbacks.lock() {
         if let Some(callback) = callbacks.on_found.as_mut() {
-            callback(peer, discovery);
+            catch_user_panic("browser_found_trampoline", || callback(peer, discovery));
         }
     }
 }
@@ -264,7 +266,7 @@ unsafe extern "C" fn browser_lost_trampoline(context: *mut c_void, peer: *mut c_
     let peer = unsafe { PeerId::from_owned_raw(peer) };
     if let Ok(mut callbacks) = unsafe { context.as_ref() }.callbacks.lock() {
         if let Some(callback) = callbacks.on_lost.as_mut() {
-            callback(peer);
+            catch_user_panic("browser_lost_trampoline", || callback(peer));
         }
     }
 }
@@ -279,7 +281,7 @@ unsafe extern "C" fn browser_error_trampoline(context: *mut c_void, error: *mut 
     let error = take_framework_error(error);
     if let Ok(mut callbacks) = unsafe { context.as_ref() }.callbacks.lock() {
         if let Some(callback) = callbacks.on_error.as_mut() {
-            callback(error);
+            catch_user_panic("browser_error_trampoline", || callback(error));
         }
     }
 }

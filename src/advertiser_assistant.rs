@@ -7,6 +7,8 @@ use std::ffi::CString;
 use std::fmt;
 use std::sync::Mutex;
 
+use doom_fish_utils::panic_safe::catch_user_panic;
+
 use crate::error::{copy_and_free_string, MultipeerError, Result};
 use crate::ffi;
 use crate::session::Session;
@@ -237,7 +239,7 @@ unsafe extern "C" fn advertiser_assistant_will_present_trampoline(context: *mut 
     };
     if let Ok(mut callbacks) = unsafe { context.as_ref() }.callbacks.lock() {
         if let Some(callback) = callbacks.on_will_present_invitation.as_mut() {
-            callback();
+            catch_user_panic("advertiser_assistant_will_present_trampoline", callback);
         }
     }
 }
@@ -248,7 +250,7 @@ unsafe extern "C" fn advertiser_assistant_did_dismiss_trampoline(context: *mut c
     };
     if let Ok(mut callbacks) = unsafe { context.as_ref() }.callbacks.lock() {
         if let Some(callback) = callbacks.on_did_dismiss_invitation.as_mut() {
-            callback();
+            catch_user_panic("advertiser_assistant_did_dismiss_trampoline", callback);
         }
     }
 }

@@ -11,6 +11,8 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
+use doom_fish_utils::panic_safe::catch_user_panic;
+
 use crate::error::{
     take_error, take_framework_error, take_optional_framework_error, FrameworkError,
     MultipeerError, Result,
@@ -743,7 +745,7 @@ unsafe extern "C" fn resource_send_completion_trampoline(context: *mut c_void, e
     let mut state = unsafe { Box::from_raw(context.as_ptr()) };
     let error = take_optional_framework_error(error);
     if let Some(callback) = state.callback.take() {
-        callback(error);
+        catch_user_panic("resource_send_completion_trampoline", || callback(error));
     }
 }
 
@@ -754,7 +756,8 @@ unsafe extern "C" fn session_state_trampoline(context: *mut c_void, peer: *mut c
     let peer = unsafe { PeerId::from_owned_raw(peer) };
     if let Ok(mut callbacks) = unsafe { context.as_ref() }.callbacks.lock() {
         if let Some(callback) = callbacks.on_state.as_mut() {
-            callback(peer, SessionState::from_raw(state));
+            let state = SessionState::from_raw(state);
+            catch_user_panic("session_state_trampoline", || callback(peer, state));
         }
     }
 }
@@ -776,7 +779,7 @@ unsafe extern "C" fn session_data_trampoline(
     };
     if let Ok(mut callbacks) = unsafe { context.as_ref() }.callbacks.lock() {
         if let Some(callback) = callbacks.on_data.as_mut() {
-            callback(peer, payload);
+            catch_user_panic("session_data_trampoline", || callback(peer, payload));
         }
     }
 }
@@ -797,7 +800,7 @@ unsafe extern "C" fn session_stream_trampoline(
     let stream = unsafe { InputStream::from_owned_raw(stream) };
     if let Ok(mut callbacks) = unsafe { context.as_ref() }.callbacks.lock() {
         if let Some(callback) = callbacks.on_stream.as_mut() {
-            callback(peer, name, stream);
+            catch_user_panic("session_stream_trampoline", || callback(peer, name, stream));
         }
     }
 }
@@ -818,7 +821,9 @@ unsafe extern "C" fn session_resource_start_trampoline(
     let progress = unsafe { ResourceTransfer::from_owned_raw(progress) };
     if let Ok(mut callbacks) = unsafe { context.as_ref() }.callbacks.lock() {
         if let Some(callback) = callbacks.on_resource_started.as_mut() {
-            callback(peer, name, progress);
+            catch_user_panic("session_resource_start_trampoline", || {
+                callback(peer, name, progress);
+            });
         }
     }
 }
@@ -852,7 +857,9 @@ unsafe extern "C" fn session_resource_finish_trampoline(
     let error = take_optional_framework_error(error);
     if let Ok(mut callbacks) = unsafe { context.as_ref() }.callbacks.lock() {
         if let Some(callback) = callbacks.on_resource_finished.as_mut() {
-            callback(peer, name, path, error);
+            catch_user_panic("session_resource_finish_trampoline", || {
+                callback(peer, name, path, error);
+            });
         }
     }
 }
@@ -873,10 +880,13 @@ unsafe extern "C" fn session_certificate_trampoline(
     let certificate = take_handle_array(certificate_items, certificate_count, |raw| unsafe {
         SecurityIdentityItem::from_owned_raw(raw)
     });
+    let mut result = false;
     if let Ok(mut callbacks) = unsafe { context.as_ref() }.callbacks.lock() {
         if let Some(callback) = callbacks.on_certificate.as_mut() {
-            return callback(peer, certificate);
+            catch_user_panic("session_certificate_trampoline", || {
+                result = callback(peer, certificate);
+            });
         }
     }
-    false
+    result
 }

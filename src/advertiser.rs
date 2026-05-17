@@ -7,6 +7,8 @@ use std::ffi::CString;
 use std::fmt;
 use std::sync::Mutex;
 
+use doom_fish_utils::panic_safe::catch_user_panic;
+
 use crate::error::{
     copy_and_free_string, take_framework_error, FrameworkError, MultipeerError, Result,
 };
@@ -291,17 +293,20 @@ unsafe extern "C" fn advertiser_invitation_trampoline(
                 .to_vec(),
         )
     };
+    let mut result: *mut c_void = ptr::null_mut();
     if let Ok(mut callbacks) = unsafe { context.as_ref() }.callbacks.lock() {
         if let Some(callback) = callbacks.on_invitation.as_mut() {
-            return match callback(peer, payload) {
-                InvitationResponse::Decline => ptr::null_mut(),
-                InvitationResponse::Accept(session) => unsafe {
-                    ffi::core::mpc_object_retain(session.as_ptr())
-                },
-            };
+            catch_user_panic("advertiser_invitation_trampoline", || {
+                result = match callback(peer, payload) {
+                    InvitationResponse::Decline => ptr::null_mut(),
+                    InvitationResponse::Accept(session) => unsafe {
+                        ffi::core::mpc_object_retain(session.as_ptr())
+                    },
+                };
+            });
         }
     }
-    ptr::null_mut()
+    result
 }
 
 unsafe extern "C" fn advertiser_error_trampoline(context: *mut c_void, error: *mut c_void) {
@@ -314,7 +319,7 @@ unsafe extern "C" fn advertiser_error_trampoline(context: *mut c_void, error: *m
     let error = take_framework_error(error);
     if let Ok(mut callbacks) = unsafe { context.as_ref() }.callbacks.lock() {
         if let Some(callback) = callbacks.on_error.as_mut() {
-            callback(error);
+            catch_user_panic("advertiser_error_trampoline", || callback(error));
         }
     }
 }

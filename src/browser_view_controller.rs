@@ -12,6 +12,8 @@ use std::ffi::CString;
 use std::fmt;
 use std::sync::Mutex;
 
+use doom_fish_utils::panic_safe::catch_user_panic;
+
 use crate::browser::NearbyServiceBrowser;
 use crate::error::{MultipeerError, Result};
 use crate::ffi;
@@ -264,7 +266,7 @@ unsafe extern "C" fn browser_view_controller_finish_trampoline(context: *mut c_v
     };
     if let Ok(mut callbacks) = unsafe { context.as_ref() }.callbacks.lock() {
         if let Some(callback) = callbacks.on_finish.as_mut() {
-            callback();
+            catch_user_panic("browser_view_controller_finish_trampoline", callback);
         }
     }
 }
@@ -275,7 +277,7 @@ unsafe extern "C" fn browser_view_controller_cancel_trampoline(context: *mut c_v
     };
     if let Ok(mut callbacks) = unsafe { context.as_ref() }.callbacks.lock() {
         if let Some(callback) = callbacks.on_cancel.as_mut() {
-            callback();
+            catch_user_panic("browser_view_controller_cancel_trampoline", callback);
         }
     }
 }
@@ -295,10 +297,13 @@ unsafe extern "C" fn browser_view_controller_should_present_trampoline(
         let json = unsafe { std::ffi::CStr::from_ptr(discovery_json) }.to_string_lossy();
         serde_json::from_str::<HashMap<String, String>>(&json).ok()
     };
+    let mut result = true;
     if let Ok(mut callbacks) = unsafe { context.as_ref() }.callbacks.lock() {
         if let Some(callback) = callbacks.should_present_peer.as_mut() {
-            return callback(peer, discovery);
+            catch_user_panic("browser_view_controller_should_present_trampoline", || {
+                result = callback(peer, discovery);
+            });
         }
     }
-    true
+    result
 }

@@ -32,10 +32,12 @@
 //! # }
 //! ```
 
+use core::ptr::NonNull;
 use std::collections::HashMap;
 use std::ffi::{c_void, CStr};
 use std::path::PathBuf;
 
+use doom_fish_utils::panic_safe::catch_user_panic;
 use doom_fish_utils::stream::{AsyncStreamSender, BoundedAsyncStream, NextItem};
 
 use crate::advertiser::NearbyServiceAdvertiser;
@@ -202,93 +204,100 @@ pub enum SessionEvent {
 }
 
 unsafe extern "C" fn session_event_cb(kind: i32, payload: *const c_void, ctx: *mut c_void) {
-    let sender = unsafe { &*ctx.cast::<AsyncStreamSender<SessionEvent>>() };
-    let event = match kind {
-        0 => {
-            let p = unsafe { &*payload.cast::<SessionStatePayload>() };
-            SessionEvent::StateChanged {
-                peer: unsafe { PeerId::from_owned_raw(p.peer) },
-                state: SessionState::from_raw(p.state),
-            }
-        }
-        1 => {
-            let p = unsafe { &*payload.cast::<SessionDataPayload>() };
-            let data = if p.data.is_null() || p.len == 0 {
-                vec![]
-            } else {
-                unsafe { std::slice::from_raw_parts(p.data.cast::<u8>(), p.len) }.to_vec()
-            };
-            SessionEvent::DataReceived {
-                peer: unsafe { PeerId::from_owned_raw(p.peer) },
-                data,
-            }
-        }
-        2 => {
-            let p = unsafe { &*payload.cast::<SessionStreamPayload>() };
-            let name = unsafe { CStr::from_ptr(p.name) }
-                .to_string_lossy()
-                .into_owned();
-            SessionEvent::StreamReceived {
-                peer: unsafe { PeerId::from_owned_raw(p.peer) },
-                name,
-                stream: unsafe { InputStream::from_owned_raw(p.stream) },
-            }
-        }
-        3 => {
-            let p = unsafe { &*payload.cast::<SessionResourceStartPayload>() };
-            let name = unsafe { CStr::from_ptr(p.name) }
-                .to_string_lossy()
-                .into_owned();
-            SessionEvent::ResourceStarted {
-                peer: unsafe { PeerId::from_owned_raw(p.peer) },
-                name,
-                transfer: unsafe { ResourceTransfer::from_owned_raw(p.progress) },
-            }
-        }
-        4 => {
-            let p = unsafe { &*payload.cast::<SessionResourceFinishPayload>() };
-            let name = unsafe { CStr::from_ptr(p.name) }
-                .to_string_lossy()
-                .into_owned();
-            let local_url = if p.url_path.is_null() {
-                None
-            } else {
-                Some(PathBuf::from(
-                    unsafe { CStr::from_ptr(p.url_path) }
-                        .to_string_lossy()
-                        .as_ref(),
-                ))
-            };
-            let error = if p.error.is_null() {
-                None
-            } else {
-                Some(take_framework_error(p.error))
-            };
-            SessionEvent::ResourceFinished {
-                peer: unsafe { PeerId::from_owned_raw(p.peer) },
-                name,
-                local_url,
-                error,
-            }
-        }
-        5 => {
-            let p = unsafe { &*payload.cast::<SessionCertPayload>() };
-            let items = if p.items.is_null() || p.count == 0 {
-                vec![]
-            } else {
-                unsafe { std::slice::from_raw_parts(p.items, p.count) }
-                    .iter()
-                    .map(|&raw| unsafe { SecurityIdentityItem::from_owned_raw(raw) })
-                    .collect()
-            };
-            SessionEvent::CertificateReceived {
-                peer: unsafe { PeerId::from_owned_raw(p.peer) },
-                items,
-            }
-        }
-        _ => return,
+    let Some(sender) = NonNull::new(ctx.cast::<AsyncStreamSender<SessionEvent>>()) else {
+        return;
     };
-    sender.push(event);
+    catch_user_panic("session_event_cb", || {
+        let sender = unsafe { sender.as_ref() };
+        let event = match kind {
+            0 => {
+                let p = unsafe { &*payload.cast::<SessionStatePayload>() };
+                Some(SessionEvent::StateChanged {
+                    peer: unsafe { PeerId::from_owned_raw(p.peer) },
+                    state: SessionState::from_raw(p.state),
+                })
+            }
+            1 => {
+                let p = unsafe { &*payload.cast::<SessionDataPayload>() };
+                let data = if p.data.is_null() || p.len == 0 {
+                    vec![]
+                } else {
+                    unsafe { std::slice::from_raw_parts(p.data.cast::<u8>(), p.len) }.to_vec()
+                };
+                Some(SessionEvent::DataReceived {
+                    peer: unsafe { PeerId::from_owned_raw(p.peer) },
+                    data,
+                })
+            }
+            2 => {
+                let p = unsafe { &*payload.cast::<SessionStreamPayload>() };
+                let name = unsafe { CStr::from_ptr(p.name) }
+                    .to_string_lossy()
+                    .into_owned();
+                Some(SessionEvent::StreamReceived {
+                    peer: unsafe { PeerId::from_owned_raw(p.peer) },
+                    name,
+                    stream: unsafe { InputStream::from_owned_raw(p.stream) },
+                })
+            }
+            3 => {
+                let p = unsafe { &*payload.cast::<SessionResourceStartPayload>() };
+                let name = unsafe { CStr::from_ptr(p.name) }
+                    .to_string_lossy()
+                    .into_owned();
+                Some(SessionEvent::ResourceStarted {
+                    peer: unsafe { PeerId::from_owned_raw(p.peer) },
+                    name,
+                    transfer: unsafe { ResourceTransfer::from_owned_raw(p.progress) },
+                })
+            }
+            4 => {
+                let p = unsafe { &*payload.cast::<SessionResourceFinishPayload>() };
+                let name = unsafe { CStr::from_ptr(p.name) }
+                    .to_string_lossy()
+                    .into_owned();
+                let local_url = if p.url_path.is_null() {
+                    None
+                } else {
+                    Some(PathBuf::from(
+                        unsafe { CStr::from_ptr(p.url_path) }
+                            .to_string_lossy()
+                            .as_ref(),
+                    ))
+                };
+                let error = if p.error.is_null() {
+                    None
+                } else {
+                    Some(take_framework_error(p.error))
+                };
+                Some(SessionEvent::ResourceFinished {
+                    peer: unsafe { PeerId::from_owned_raw(p.peer) },
+                    name,
+                    local_url,
+                    error,
+                })
+            }
+            5 => {
+                let p = unsafe { &*payload.cast::<SessionCertPayload>() };
+                let items = if p.items.is_null() || p.count == 0 {
+                    vec![]
+                } else {
+                    unsafe { std::slice::from_raw_parts(p.items, p.count) }
+                        .iter()
+                        .map(|&raw| unsafe { SecurityIdentityItem::from_owned_raw(raw) })
+                        .collect()
+                };
+                Some(SessionEvent::CertificateReceived {
+                    peer: unsafe { PeerId::from_owned_raw(p.peer) },
+                    items,
+                })
+            }
+            _ => None,
+        };
+        if let Some(event) = event {
+            sender.push(event);
+        }
+    });
 }
 
 /// Async stream of [`SessionEvent`]s produced by an
@@ -395,34 +404,41 @@ pub enum BrowserEvent {
 }
 
 unsafe extern "C" fn browser_event_cb(kind: i32, payload: *const c_void, ctx: *mut c_void) {
-    let sender = unsafe { &*ctx.cast::<AsyncStreamSender<BrowserEvent>>() };
-    let event = match kind {
-        0 => {
-            let p = unsafe { &*payload.cast::<BrowserFoundPayload>() };
-            let discovery_info = if p.discovery_json.is_null() {
-                None
-            } else {
-                let json = unsafe { CStr::from_ptr(p.discovery_json) }.to_string_lossy();
-                serde_json::from_str::<HashMap<String, String>>(&json).ok()
-            };
-            BrowserEvent::FoundPeer {
-                peer: unsafe { PeerId::from_owned_raw(p.peer) },
-                discovery_info,
-            }
-        }
-        1 => {
-            let p = unsafe { &*payload.cast::<BrowserLostPayload>() };
-            BrowserEvent::LostPeer {
-                peer: unsafe { PeerId::from_owned_raw(p.peer) },
-            }
-        }
-        2 => {
-            let p = unsafe { &*payload.cast::<BrowserErrorPayload>() };
-            BrowserEvent::BrowsingFailed(take_framework_error(p.error))
-        }
-        _ => return,
+    let Some(sender) = NonNull::new(ctx.cast::<AsyncStreamSender<BrowserEvent>>()) else {
+        return;
     };
-    sender.push(event);
+    catch_user_panic("browser_event_cb", || {
+        let sender = unsafe { sender.as_ref() };
+        let event = match kind {
+            0 => {
+                let p = unsafe { &*payload.cast::<BrowserFoundPayload>() };
+                let discovery_info = if p.discovery_json.is_null() {
+                    None
+                } else {
+                    let json = unsafe { CStr::from_ptr(p.discovery_json) }.to_string_lossy();
+                    serde_json::from_str::<HashMap<String, String>>(&json).ok()
+                };
+                Some(BrowserEvent::FoundPeer {
+                    peer: unsafe { PeerId::from_owned_raw(p.peer) },
+                    discovery_info,
+                })
+            }
+            1 => {
+                let p = unsafe { &*payload.cast::<BrowserLostPayload>() };
+                Some(BrowserEvent::LostPeer {
+                    peer: unsafe { PeerId::from_owned_raw(p.peer) },
+                })
+            }
+            2 => {
+                let p = unsafe { &*payload.cast::<BrowserErrorPayload>() };
+                Some(BrowserEvent::BrowsingFailed(take_framework_error(p.error)))
+            }
+            _ => None,
+        };
+        if let Some(event) = event {
+            sender.push(event);
+        }
+    });
 }
 
 /// Async stream of [`BrowserEvent`]s from an
@@ -570,35 +586,44 @@ impl std::fmt::Debug for AdvertiserEvent {
 }
 
 unsafe extern "C" fn advertiser_event_cb(kind: i32, payload: *const c_void, ctx: *mut c_void) {
-    let sender = unsafe { &*ctx.cast::<AsyncStreamSender<AdvertiserEvent>>() };
-    let event = match kind {
-        0 => {
-            let p = unsafe { &*payload.cast::<AdvertiserInvitationPayload>() };
-            let context = if p.context_ptr.is_null() || p.context_len == 0 {
-                None
-            } else {
-                Some(
-                    unsafe {
-                        std::slice::from_raw_parts(p.context_ptr.cast::<u8>(), p.context_len)
-                    }
-                    .to_vec(),
-                )
-            };
-            AdvertiserEvent::ReceivedInvitation {
-                peer: unsafe { PeerId::from_owned_raw(p.peer) },
-                context,
-                handle: InvitationHandle {
-                    ptr: Some(p.invitation_handle),
-                },
-            }
-        }
-        1 => {
-            let p = unsafe { &*payload.cast::<AdvertiserErrorPayload>() };
-            AdvertiserEvent::AdvertisingFailed(take_framework_error(p.error))
-        }
-        _ => return,
+    let Some(sender) = NonNull::new(ctx.cast::<AsyncStreamSender<AdvertiserEvent>>()) else {
+        return;
     };
-    sender.push(event);
+    catch_user_panic("advertiser_event_cb", || {
+        let sender = unsafe { sender.as_ref() };
+        let event = match kind {
+            0 => {
+                let p = unsafe { &*payload.cast::<AdvertiserInvitationPayload>() };
+                let context = if p.context_ptr.is_null() || p.context_len == 0 {
+                    None
+                } else {
+                    Some(
+                        unsafe {
+                            std::slice::from_raw_parts(p.context_ptr.cast::<u8>(), p.context_len)
+                        }
+                        .to_vec(),
+                    )
+                };
+                Some(AdvertiserEvent::ReceivedInvitation {
+                    peer: unsafe { PeerId::from_owned_raw(p.peer) },
+                    context,
+                    handle: InvitationHandle {
+                        ptr: Some(p.invitation_handle),
+                    },
+                })
+            }
+            1 => {
+                let p = unsafe { &*payload.cast::<AdvertiserErrorPayload>() };
+                Some(AdvertiserEvent::AdvertisingFailed(take_framework_error(
+                    p.error,
+                )))
+            }
+            _ => None,
+        };
+        if let Some(event) = event {
+            sender.push(event);
+        }
+    });
 }
 
 /// Async stream of [`AdvertiserEvent`]s from an
