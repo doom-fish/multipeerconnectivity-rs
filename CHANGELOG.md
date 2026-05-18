@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.2
+
+- Added concise rustdoc coverage across the non-FFI MultipeerConnectivity wrapper API, raising public-item coverage above 60%.
+
 ## 0.3.1
 
 - Added `catch_user_panic` wrappers to all `extern "C"` trampolines to prevent

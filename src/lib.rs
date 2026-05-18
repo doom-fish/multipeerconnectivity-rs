@@ -30,6 +30,7 @@ pub use session::{
     SessionSendDataMode, SessionState,
 };
 
+/// Re-exports the main `MultipeerConnectivity` wrapper types and helpers.
 pub mod prelude {
     pub use crate::{
         mc_error_domain, session_maximum_number_of_peers, session_minimum_number_of_peers,

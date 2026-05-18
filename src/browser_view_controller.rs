@@ -48,6 +48,7 @@ fn validate_service_type(service_type: &str) -> Result<CString> {
     })
 }
 
+/// Configures `MultipeerConnectivity` browser-view-controller delegate callbacks.
 pub struct BrowserViewControllerDelegate {
     on_finish: Option<Box<FinishHandler>>,
     on_cancel: Option<Box<CancelHandler>>,
@@ -56,6 +57,7 @@ pub struct BrowserViewControllerDelegate {
 
 impl BrowserViewControllerDelegate {
     #[must_use]
+    /// Creates an empty `MultipeerConnectivity` browser-view-controller delegate.
     pub const fn new() -> Self {
         Self {
             on_finish: None,
@@ -65,6 +67,7 @@ impl BrowserViewControllerDelegate {
     }
 
     #[must_use]
+    /// Registers a callback when the `MultipeerConnectivity` browser UI finishes.
     pub fn on_finish<F>(mut self, handler: F) -> Self
     where
         F: FnMut() + Send + 'static,
@@ -74,6 +77,7 @@ impl BrowserViewControllerDelegate {
     }
 
     #[must_use]
+    /// Registers a callback when the `MultipeerConnectivity` browser UI is cancelled.
     pub fn on_cancel<F>(mut self, handler: F) -> Self
     where
         F: FnMut() + Send + 'static,
@@ -83,6 +87,7 @@ impl BrowserViewControllerDelegate {
     }
 
     #[must_use]
+    /// Registers a filter for peers shown by the `MultipeerConnectivity` browser UI.
     pub fn should_present_peer<F>(mut self, handler: F) -> Self
     where
         F: FnMut(PeerId, Option<HashMap<String, String>>) -> bool + Send + 'static,
@@ -102,12 +107,14 @@ struct BrowserViewControllerDelegateState {
     callbacks: Mutex<BrowserViewControllerDelegate>,
 }
 
+/// Wraps a `MultipeerConnectivity` `MCBrowserViewController`.
 pub struct BrowserViewController {
     raw: NonNull<c_void>,
     delegate_state: Option<NonNull<BrowserViewControllerDelegateState>>,
 }
 
 impl BrowserViewController {
+    /// Creates a `MultipeerConnectivity` browser view controller from a service type.
     pub fn new_with_service_type(service_type: impl AsRef<str>, session: &Session) -> Result<Self> {
         let service_type = validate_service_type(service_type.as_ref())?;
         let raw = unsafe {
@@ -125,6 +132,7 @@ impl BrowserViewController {
         })
     }
 
+    /// Creates a `MultipeerConnectivity` browser view controller from an existing browser.
     pub fn new_with_browser(browser: &NearbyServiceBrowser, session: &Session) -> Self {
         let raw = unsafe {
             ffi::browser_view_controller::mpc_browser_view_controller_create_with_browser(
@@ -147,6 +155,7 @@ impl BrowserViewController {
     }
 
     #[must_use]
+    /// Returns the `MultipeerConnectivity` browser owned by this controller.
     pub fn browser(&self) -> NearbyServiceBrowser {
         let raw = unsafe {
             ffi::browser_view_controller::mpc_browser_view_controller_copy_browser(
@@ -157,6 +166,7 @@ impl BrowserViewController {
     }
 
     #[must_use]
+    /// Returns the `MultipeerConnectivity` session owned by this controller.
     pub fn session(&self) -> Session {
         let raw = unsafe {
             ffi::browser_view_controller::mpc_browser_view_controller_copy_session(
@@ -167,6 +177,7 @@ impl BrowserViewController {
     }
 
     #[must_use]
+    /// Returns the minimum peers required by the `MultipeerConnectivity` browser UI.
     pub fn minimum_number_of_peers(&self) -> usize {
         unsafe {
             ffi::browser_view_controller::mpc_browser_view_controller_minimum_number_of_peers(
@@ -175,6 +186,7 @@ impl BrowserViewController {
         }
     }
 
+    /// Sets the minimum peers required by the `MultipeerConnectivity` browser UI.
     pub fn set_minimum_number_of_peers(&self, value: usize) {
         unsafe {
             ffi::browser_view_controller::mpc_browser_view_controller_set_minimum_number_of_peers(
@@ -185,6 +197,7 @@ impl BrowserViewController {
     }
 
     #[must_use]
+    /// Returns the maximum peers allowed by the `MultipeerConnectivity` browser UI.
     pub fn maximum_number_of_peers(&self) -> usize {
         unsafe {
             ffi::browser_view_controller::mpc_browser_view_controller_maximum_number_of_peers(
@@ -193,6 +206,7 @@ impl BrowserViewController {
         }
     }
 
+    /// Sets the maximum peers allowed by the `MultipeerConnectivity` browser UI.
     pub fn set_maximum_number_of_peers(&self, value: usize) {
         unsafe {
             ffi::browser_view_controller::mpc_browser_view_controller_set_maximum_number_of_peers(
@@ -202,6 +216,7 @@ impl BrowserViewController {
         };
     }
 
+    /// Installs typed `MultipeerConnectivity` browser-view-controller callbacks.
     pub fn set_callbacks(&mut self, callbacks: BrowserViewControllerDelegate) {
         self.clear_delegate();
         let has_should_present = callbacks.should_present_peer.is_some();
@@ -225,6 +240,7 @@ impl BrowserViewController {
         self.delegate_state = Some(ptr);
     }
 
+    /// Removes the `MultipeerConnectivity` browser-view-controller delegate.
     pub fn clear_delegate(&mut self) {
         if let Some(state) = self.delegate_state.take() {
             unsafe {

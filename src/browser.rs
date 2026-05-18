@@ -44,6 +44,7 @@ fn validate_service_type(service_type: &str) -> Result<CString> {
     })
 }
 
+/// Configures `MultipeerConnectivity` browser delegate callbacks.
 pub struct NearbyServiceBrowserDelegate {
     on_found: Option<Box<FoundPeerHandler>>,
     on_lost: Option<Box<LostPeerHandler>>,
@@ -52,6 +53,7 @@ pub struct NearbyServiceBrowserDelegate {
 
 impl NearbyServiceBrowserDelegate {
     #[must_use]
+    /// Creates an empty `MultipeerConnectivity` browser delegate.
     pub const fn new() -> Self {
         Self {
             on_found: None,
@@ -61,6 +63,7 @@ impl NearbyServiceBrowserDelegate {
     }
 
     #[must_use]
+    /// Registers a callback for discovered `MultipeerConnectivity` peers.
     pub fn on_found<F>(mut self, handler: F) -> Self
     where
         F: FnMut(PeerId, Option<HashMap<String, String>>) + Send + 'static,
@@ -70,6 +73,7 @@ impl NearbyServiceBrowserDelegate {
     }
 
     #[must_use]
+    /// Registers a callback for lost `MultipeerConnectivity` peers.
     pub fn on_lost<F>(mut self, handler: F) -> Self
     where
         F: FnMut(PeerId) + Send + 'static,
@@ -79,6 +83,7 @@ impl NearbyServiceBrowserDelegate {
     }
 
     #[must_use]
+    /// Registers a `MultipeerConnectivity` browser error callback.
     pub fn on_error<F>(mut self, handler: F) -> Self
     where
         F: FnMut(FrameworkError) + Send + 'static,
@@ -98,12 +103,14 @@ struct BrowserDelegateState {
     callbacks: Mutex<NearbyServiceBrowserDelegate>,
 }
 
+/// Wraps a `MultipeerConnectivity` `MCNearbyServiceBrowser`.
 pub struct NearbyServiceBrowser {
     raw: NonNull<c_void>,
     delegate_state: Option<NonNull<BrowserDelegateState>>,
 }
 
 impl NearbyServiceBrowser {
+    /// Creates a `MultipeerConnectivity` browser for the local peer.
     pub fn new(peer: &PeerId, service_type: impl AsRef<str>) -> Result<Self> {
         let service_type = validate_service_type(service_type.as_ref())?;
         let raw = unsafe { ffi::browser::mpc_browser_create(peer.as_ptr(), service_type.as_ptr()) };
@@ -124,25 +131,30 @@ impl NearbyServiceBrowser {
     }
 
     #[must_use]
+    /// Returns the local `MultipeerConnectivity` peer identifier.
     pub fn my_peer_id(&self) -> PeerId {
         let raw = unsafe { ffi::browser::mpc_browser_copy_my_peer(self.raw.as_ptr()) };
         unsafe { PeerId::from_owned_raw(raw) }
     }
 
     #[must_use]
+    /// Returns the `MultipeerConnectivity` service type.
     pub fn service_type(&self) -> String {
         let string = unsafe { ffi::browser::mpc_browser_service_type(self.raw.as_ptr()) };
         copy_and_free_string(string)
     }
 
+    /// Starts browsing for `MultipeerConnectivity` peers.
     pub fn start_browsing_for_peers(&self) {
         unsafe { ffi::browser::mpc_browser_start(self.raw.as_ptr()) };
     }
 
+    /// Stops browsing for `MultipeerConnectivity` peers.
     pub fn stop_browsing_for_peers(&self) {
         unsafe { ffi::browser::mpc_browser_stop(self.raw.as_ptr()) };
     }
 
+    /// Invites a peer through the `MultipeerConnectivity` browser.
     pub fn invite_peer(
         &self,
         peer: &PeerId,
@@ -165,6 +177,7 @@ impl NearbyServiceBrowser {
         }
     }
 
+    /// Installs basic `MultipeerConnectivity` browser callbacks.
     pub fn set_delegate<F, G>(&mut self, on_found: F, on_lost: G)
     where
         F: FnMut(PeerId, Option<HashMap<String, String>>) + Send + 'static,
@@ -177,6 +190,7 @@ impl NearbyServiceBrowser {
         );
     }
 
+    /// Installs typed `MultipeerConnectivity` browser callbacks.
     pub fn set_callbacks(&mut self, callbacks: NearbyServiceBrowserDelegate) {
         self.clear_delegate();
         let has_error = callbacks.on_error.is_some();
@@ -200,6 +214,7 @@ impl NearbyServiceBrowser {
         self.delegate_state = Some(ptr);
     }
 
+    /// Removes the `MultipeerConnectivity` browser delegate.
     pub fn clear_delegate(&mut self) {
         if let Some(state) = self.delegate_state.take() {
             unsafe {

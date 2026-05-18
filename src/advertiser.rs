@@ -64,11 +64,15 @@ fn validate_service_type(service_type: &str) -> Result<CString> {
 }
 
 #[derive(Debug)]
+/// Represents how a `MultipeerConnectivity` advertiser should handle an invitation.
 pub enum InvitationResponse {
+    /// Declines the `MultipeerConnectivity` invitation.
     Decline,
+    /// Accepts the `MultipeerConnectivity` invitation with the provided session.
     Accept(Session),
 }
 
+/// Configures `MultipeerConnectivity` advertiser delegate callbacks.
 pub struct NearbyServiceAdvertiserDelegate {
     on_invitation: Option<Box<InvitationHandler>>,
     on_error: Option<Box<AdvertiserErrorHandler>>,
@@ -76,6 +80,7 @@ pub struct NearbyServiceAdvertiserDelegate {
 
 impl NearbyServiceAdvertiserDelegate {
     #[must_use]
+    /// Creates an empty `MultipeerConnectivity` advertiser delegate.
     pub const fn new() -> Self {
         Self {
             on_invitation: None,
@@ -84,6 +89,7 @@ impl NearbyServiceAdvertiserDelegate {
     }
 
     #[must_use]
+    /// Registers a `MultipeerConnectivity` invitation callback.
     pub fn on_invitation<F>(mut self, handler: F) -> Self
     where
         F: FnMut(PeerId, Option<Vec<u8>>) -> InvitationResponse + Send + 'static,
@@ -93,6 +99,7 @@ impl NearbyServiceAdvertiserDelegate {
     }
 
     #[must_use]
+    /// Registers a `MultipeerConnectivity` advertiser error callback.
     pub fn on_error<F>(mut self, handler: F) -> Self
     where
         F: FnMut(FrameworkError) + Send + 'static,
@@ -112,12 +119,14 @@ struct AdvertiserDelegateState {
     callbacks: Mutex<NearbyServiceAdvertiserDelegate>,
 }
 
+/// Wraps a `MultipeerConnectivity` `MCNearbyServiceAdvertiser`.
 pub struct NearbyServiceAdvertiser {
     raw: NonNull<c_void>,
     delegate_state: Option<NonNull<AdvertiserDelegateState>>,
 }
 
 impl NearbyServiceAdvertiser {
+    /// Creates a `MultipeerConnectivity` advertiser for the local peer.
     pub fn new(
         peer: &PeerId,
         discovery_info: Option<&HashMap<String, String>>,
@@ -164,12 +173,14 @@ impl NearbyServiceAdvertiser {
     }
 
     #[must_use]
+    /// Returns the local `MultipeerConnectivity` peer identifier.
     pub fn my_peer_id(&self) -> PeerId {
         let raw = unsafe { ffi::advertiser::mpc_advertiser_copy_my_peer(self.raw.as_ptr()) };
         unsafe { PeerId::from_owned_raw(raw) }
     }
 
     #[must_use]
+    /// Returns the `MultipeerConnectivity` discovery info dictionary.
     pub fn discovery_info(&self) -> Option<HashMap<String, String>> {
         let string =
             unsafe { ffi::advertiser::mpc_advertiser_discovery_info_json(self.raw.as_ptr()) };
@@ -181,19 +192,23 @@ impl NearbyServiceAdvertiser {
     }
 
     #[must_use]
+    /// Returns the `MultipeerConnectivity` service type.
     pub fn service_type(&self) -> String {
         let string = unsafe { ffi::advertiser::mpc_advertiser_service_type(self.raw.as_ptr()) };
         copy_and_free_string(string)
     }
 
+    /// Starts advertising this `MultipeerConnectivity` peer.
     pub fn start_advertising_peer(&self) {
         unsafe { ffi::advertiser::mpc_advertiser_start(self.raw.as_ptr()) };
     }
 
+    /// Stops advertising this `MultipeerConnectivity` peer.
     pub fn stop_advertising_peer(&self) {
         unsafe { ffi::advertiser::mpc_advertiser_stop(self.raw.as_ptr()) };
     }
 
+    /// Installs basic `MultipeerConnectivity` invitation handling callbacks.
     pub fn set_delegate<F>(&mut self, invitation_session: Option<&Session>, mut on_invitation: F)
     where
         F: FnMut(PeerId, Option<Vec<u8>>) -> bool + Send + 'static,
@@ -214,6 +229,7 @@ impl NearbyServiceAdvertiser {
         ));
     }
 
+    /// Installs typed `MultipeerConnectivity` advertiser callbacks.
     pub fn set_callbacks(&mut self, callbacks: NearbyServiceAdvertiserDelegate) {
         self.clear_delegate();
         let has_error = callbacks.on_error.is_some();
@@ -236,6 +252,7 @@ impl NearbyServiceAdvertiser {
         self.delegate_state = Some(ptr);
     }
 
+    /// Removes the `MultipeerConnectivity` advertiser delegate.
     pub fn clear_delegate(&mut self) {
         if let Some(state) = self.delegate_state.take() {
             unsafe {

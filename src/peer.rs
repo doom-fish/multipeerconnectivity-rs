@@ -6,6 +6,7 @@ use std::fmt;
 use crate::error::{copy_and_free_string, take_error, MultipeerError, Result};
 use crate::ffi;
 
+/// Wraps a `MultipeerConnectivity` `MCPeerID`.
 pub struct PeerId {
     raw: NonNull<c_void>,
 }
@@ -38,6 +39,7 @@ impl PeerId {
     }
 
     #[must_use]
+    /// Returns the `MultipeerConnectivity` display name for this peer.
     pub fn display_name(&self) -> String {
         let string = unsafe { ffi::peer::mpc_peer_id_display_name(self.raw.as_ptr()) };
         copy_and_free_string(string)

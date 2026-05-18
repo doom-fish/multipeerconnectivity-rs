@@ -9,19 +9,29 @@ use crate::ffi;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
+/// Represents a `MultipeerConnectivity` `MCErrorCode`.
 pub enum MCErrorCode {
+    /// Represents an unknown `MultipeerConnectivity` error.
     Unknown,
+    /// Represents a `MultipeerConnectivity` not-connected error.
     NotConnected,
+    /// Represents a `MultipeerConnectivity` invalid-parameter error.
     InvalidParameter,
+    /// Represents a `MultipeerConnectivity` unsupported error.
     Unsupported,
+    /// Represents a `MultipeerConnectivity` timeout error.
     TimedOut,
+    /// Represents a `MultipeerConnectivity` cancelled error.
     Cancelled,
+    /// Represents a `MultipeerConnectivity` unavailable error.
     Unavailable,
+    /// Preserves an unmapped `MultipeerConnectivity` error code.
     Other(i32),
 }
 
 impl MCErrorCode {
     #[must_use]
+    /// Converts a raw `MultipeerConnectivity` error code.
     pub const fn from_raw(value: i32) -> Self {
         match value {
             0 => Self::Unknown,
@@ -36,6 +46,7 @@ impl MCErrorCode {
     }
 
     #[must_use]
+    /// Converts this `MultipeerConnectivity` error code to its raw value.
     pub const fn as_raw(self) -> i32 {
         match self {
             Self::Unknown => 0,
@@ -66,6 +77,7 @@ impl fmt::Display for MCErrorCode {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Stores details from a `MultipeerConnectivity` framework error.
 pub struct FrameworkError {
     domain: String,
     code: i32,
@@ -74,6 +86,7 @@ pub struct FrameworkError {
 
 impl FrameworkError {
     #[must_use]
+    /// Creates a `MultipeerConnectivity` framework error value.
     pub fn new(domain: String, code: i32, description: String) -> Self {
         Self {
             domain,
@@ -83,21 +96,25 @@ impl FrameworkError {
     }
 
     #[must_use]
+    /// Returns the `MultipeerConnectivity` error domain.
     pub fn domain(&self) -> &str {
         &self.domain
     }
 
     #[must_use]
+    /// Returns the raw `MultipeerConnectivity` error code.
     pub const fn code(&self) -> i32 {
         self.code
     }
 
     #[must_use]
+    /// Returns the `MultipeerConnectivity` error description.
     pub fn description(&self) -> &str {
         &self.description
     }
 
     #[must_use]
+    /// Returns the mapped `MultipeerConnectivity` `MCErrorCode`, if available.
     pub fn mc_error_code(&self) -> Option<MCErrorCode> {
         if self.domain == mc_error_domain() {
             Some(MCErrorCode::from_raw(self.code))
@@ -119,9 +136,13 @@ impl fmt::Display for FrameworkError {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
+/// Represents errors surfaced by these `MultipeerConnectivity` wrappers.
 pub enum MultipeerError {
+    /// Represents an invalid argument passed to a `MultipeerConnectivity` wrapper.
     InvalidArgument(String),
+    /// Represents an internal `MultipeerConnectivity` wrapper operation failure.
     OperationFailed(String),
+    /// Represents a framework error reported by `MultipeerConnectivity`.
     Framework(FrameworkError),
 }
 
@@ -137,6 +158,7 @@ impl fmt::Display for MultipeerError {
 
 impl std::error::Error for MultipeerError {}
 
+/// Alias for results returned by these `MultipeerConnectivity` wrappers.
 pub type Result<T> = std::result::Result<T, MultipeerError>;
 
 pub(crate) fn copy_and_free_string(ptr: *mut c_char) -> String {
@@ -210,6 +232,7 @@ pub(crate) fn take_optional_framework_error(ptr: *mut c_void) -> Option<Framewor
 }
 
 #[must_use]
+/// Returns the `MultipeerConnectivity` `MCErrorDomain` string.
 pub fn mc_error_domain() -> String {
     copy_and_free_string(unsafe { ffi::error::mpc_mc_error_domain() })
 }

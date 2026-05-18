@@ -39,6 +39,7 @@ fn validate_service_type(service_type: &str) -> Result<CString> {
     })
 }
 
+/// Configures `MultipeerConnectivity` advertiser-assistant delegate callbacks.
 pub struct AdvertiserAssistantDelegate {
     on_will_present_invitation: Option<Box<AssistantHandler>>,
     on_did_dismiss_invitation: Option<Box<AssistantHandler>>,
@@ -46,6 +47,7 @@ pub struct AdvertiserAssistantDelegate {
 
 impl AdvertiserAssistantDelegate {
     #[must_use]
+    /// Creates an empty `MultipeerConnectivity` advertiser-assistant delegate.
     pub const fn new() -> Self {
         Self {
             on_will_present_invitation: None,
@@ -54,6 +56,7 @@ impl AdvertiserAssistantDelegate {
     }
 
     #[must_use]
+    /// Registers a callback before the `MultipeerConnectivity` invitation UI appears.
     pub fn on_will_present_invitation<F>(mut self, handler: F) -> Self
     where
         F: FnMut() + Send + 'static,
@@ -63,6 +66,7 @@ impl AdvertiserAssistantDelegate {
     }
 
     #[must_use]
+    /// Registers a callback after the `MultipeerConnectivity` invitation UI is dismissed.
     pub fn on_did_dismiss_invitation<F>(mut self, handler: F) -> Self
     where
         F: FnMut() + Send + 'static,
@@ -82,12 +86,14 @@ struct AdvertiserAssistantDelegateState {
     callbacks: Mutex<AdvertiserAssistantDelegate>,
 }
 
+/// Wraps a `MultipeerConnectivity` `MCAdvertiserAssistant`.
 pub struct AdvertiserAssistant {
     raw: NonNull<c_void>,
     delegate_state: Option<NonNull<AdvertiserAssistantDelegateState>>,
 }
 
 impl AdvertiserAssistant {
+    /// Creates a `MultipeerConnectivity` advertiser assistant for a session.
     pub fn new(
         service_type: impl AsRef<str>,
         discovery_info: Option<&HashMap<String, String>>,
@@ -134,6 +140,7 @@ impl AdvertiserAssistant {
     }
 
     #[must_use]
+    /// Returns the `MultipeerConnectivity` session managed by this assistant.
     pub fn session(&self) -> Session {
         let raw = unsafe {
             ffi::advertiser_assistant::mpc_advertiser_assistant_copy_session(self.raw.as_ptr())
@@ -142,6 +149,7 @@ impl AdvertiserAssistant {
     }
 
     #[must_use]
+    /// Returns the `MultipeerConnectivity` discovery info dictionary.
     pub fn discovery_info(&self) -> Option<HashMap<String, String>> {
         let string = unsafe {
             ffi::advertiser_assistant::mpc_advertiser_assistant_discovery_info_json(
@@ -156,6 +164,7 @@ impl AdvertiserAssistant {
     }
 
     #[must_use]
+    /// Returns the `MultipeerConnectivity` service type.
     pub fn service_type(&self) -> String {
         let string = unsafe {
             ffi::advertiser_assistant::mpc_advertiser_assistant_service_type(self.raw.as_ptr())
@@ -163,14 +172,17 @@ impl AdvertiserAssistant {
         copy_and_free_string(string)
     }
 
+    /// Starts the `MultipeerConnectivity` advertiser assistant.
     pub fn start(&self) {
         unsafe { ffi::advertiser_assistant::mpc_advertiser_assistant_start(self.raw.as_ptr()) };
     }
 
+    /// Stops the `MultipeerConnectivity` advertiser assistant.
     pub fn stop(&self) {
         unsafe { ffi::advertiser_assistant::mpc_advertiser_assistant_stop(self.raw.as_ptr()) };
     }
 
+    /// Installs typed `MultipeerConnectivity` advertiser-assistant callbacks.
     pub fn set_callbacks(&mut self, callbacks: AdvertiserAssistantDelegate) {
         self.clear_delegate();
         let has_will = callbacks.on_will_present_invitation.is_some();
@@ -198,6 +210,7 @@ impl AdvertiserAssistant {
         self.delegate_state = Some(ptr);
     }
 
+    /// Removes the `MultipeerConnectivity` advertiser-assistant delegate.
     pub fn clear_delegate(&mut self) {
         if let Some(state) = self.delegate_state.take() {
             unsafe {

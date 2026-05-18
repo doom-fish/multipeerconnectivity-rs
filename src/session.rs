@@ -21,8 +21,11 @@ use crate::ffi;
 use crate::peer::PeerId;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Represents `MultipeerConnectivity` data delivery modes.
 pub enum SessionSendDataMode {
+    /// Uses reliable `MultipeerConnectivity` data delivery.
     Reliable,
+    /// Uses unreliable `MultipeerConnectivity` data delivery.
     Unreliable,
 }
 
@@ -36,9 +39,13 @@ impl SessionSendDataMode {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Represents `MultipeerConnectivity` session encryption preferences.
 pub enum EncryptionPreference {
+    /// Uses the default `MultipeerConnectivity` encryption policy.
     Optional,
+    /// Requires `MultipeerConnectivity` session encryption.
     Required,
+    /// Disables `MultipeerConnectivity` session encryption when permitted.
     None,
 }
 
@@ -61,10 +68,15 @@ impl EncryptionPreference {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Represents a `MultipeerConnectivity` session connection state.
 pub enum SessionState {
+    /// Indicates that the `MultipeerConnectivity` peer is disconnected.
     NotConnected,
+    /// Indicates that the `MultipeerConnectivity` peer is connecting.
     Connecting,
+    /// Indicates that the `MultipeerConnectivity` peer is connected.
     Connected,
+    /// Preserves an unknown `MultipeerConnectivity` session state.
     Unknown(i32),
 }
 
@@ -88,6 +100,7 @@ type SessionResourceFinishedHandler =
 type SessionCertificateHandler = dyn FnMut(PeerId, Vec<SecurityIdentityItem>) -> bool + Send;
 type ResourceSendCompletionHandler = dyn FnOnce(Option<FrameworkError>) + Send;
 
+/// Wraps a `MultipeerConnectivity` security-identity item.
 pub struct SecurityIdentityItem {
     raw: NonNull<c_void>,
 }
@@ -124,6 +137,7 @@ impl fmt::Debug for SecurityIdentityItem {
     }
 }
 
+/// Configures `MultipeerConnectivity` session delegate callbacks.
 pub struct SessionDelegate {
     on_state: Option<Box<SessionStateHandler>>,
     on_data: Option<Box<SessionDataHandler>>,
@@ -135,6 +149,7 @@ pub struct SessionDelegate {
 
 impl SessionDelegate {
     #[must_use]
+    /// Creates an empty `MultipeerConnectivity` session delegate.
     pub const fn new() -> Self {
         Self {
             on_state: None,
@@ -147,6 +162,7 @@ impl SessionDelegate {
     }
 
     #[must_use]
+    /// Registers a callback for `MultipeerConnectivity` state changes.
     pub fn on_state<F>(mut self, handler: F) -> Self
     where
         F: FnMut(PeerId, SessionState) + Send + 'static,
@@ -156,6 +172,7 @@ impl SessionDelegate {
     }
 
     #[must_use]
+    /// Registers a callback for `MultipeerConnectivity` data delivery.
     pub fn on_data<F>(mut self, handler: F) -> Self
     where
         F: FnMut(PeerId, Vec<u8>) + Send + 'static,
@@ -165,6 +182,7 @@ impl SessionDelegate {
     }
 
     #[must_use]
+    /// Registers a callback for received `MultipeerConnectivity` streams.
     pub fn on_stream<F>(mut self, handler: F) -> Self
     where
         F: FnMut(PeerId, String, InputStream) + Send + 'static,
@@ -174,6 +192,7 @@ impl SessionDelegate {
     }
 
     #[must_use]
+    /// Registers a callback for started `MultipeerConnectivity` resource transfers.
     pub fn on_resource_started<F>(mut self, handler: F) -> Self
     where
         F: FnMut(PeerId, String, ResourceTransfer) + Send + 'static,
@@ -183,6 +202,7 @@ impl SessionDelegate {
     }
 
     #[must_use]
+    /// Registers a callback for completed `MultipeerConnectivity` resource transfers.
     pub fn on_resource_finished<F>(mut self, handler: F) -> Self
     where
         F: FnMut(PeerId, String, Option<PathBuf>, Option<FrameworkError>) + Send + 'static,
@@ -192,6 +212,7 @@ impl SessionDelegate {
     }
 
     #[must_use]
+    /// Registers a callback for `MultipeerConnectivity` certificate handling.
     pub fn on_certificate<F>(mut self, handler: F) -> Self
     where
         F: FnMut(PeerId, Vec<SecurityIdentityItem>) -> bool + Send + 'static,
@@ -215,16 +236,19 @@ struct ResourceSendCompletionState {
     callback: Option<Box<ResourceSendCompletionHandler>>,
 }
 
+/// Wraps a `MultipeerConnectivity` `MCSession`.
 pub struct Session {
     raw: NonNull<c_void>,
     delegate_state: Option<NonNull<SessionDelegateState>>,
 }
 
 impl Session {
+    /// Creates a `MultipeerConnectivity` session for the local peer.
     pub fn new(peer: &PeerId, encryption_preference: EncryptionPreference) -> Result<Self> {
         unsafe { Self::with_security_identity(peer, None, encryption_preference) }
     }
 
+    /// Creates a `MultipeerConnectivity` session from security-identity wrappers.
     pub fn with_security_identity_items(
         peer: &PeerId,
         security_identity: &[SecurityIdentityItem],
@@ -255,6 +279,7 @@ impl Session {
         })
     }
 
+    /// Creates a `MultipeerConnectivity` session from raw security-identity handles.
     pub unsafe fn with_security_identity(
         peer: &PeerId,
         security_identity: Option<&[*mut c_void]>,
@@ -285,12 +310,14 @@ impl Session {
     }
 
     #[must_use]
+    /// Returns the local `MultipeerConnectivity` peer identifier.
     pub fn my_peer_id(&self) -> PeerId {
         let raw = unsafe { ffi::session::mpc_session_copy_my_peer(self.raw.as_ptr()) };
         unsafe { PeerId::from_owned_raw(raw) }
     }
 
     #[must_use]
+    /// Returns the `MultipeerConnectivity` security identity items.
     pub fn security_identity(&self) -> Vec<SecurityIdentityItem> {
         let mut array = ptr::null_mut();
         let mut count = 0usize;
@@ -307,6 +334,7 @@ impl Session {
     }
 
     #[must_use]
+    /// Returns the `MultipeerConnectivity` encryption preference.
     pub fn encryption_preference(&self) -> EncryptionPreference {
         EncryptionPreference::from_raw(unsafe {
             ffi::session::mpc_session_encryption_preference(self.raw.as_ptr())
@@ -314,6 +342,7 @@ impl Session {
     }
 
     #[must_use]
+    /// Returns the currently connected `MultipeerConnectivity` peers.
     pub fn connected_peers(&self) -> Vec<PeerId> {
         let mut array = ptr::null_mut();
         let mut count = 0usize;
@@ -327,6 +356,7 @@ impl Session {
         take_handle_array(array, count, |raw| unsafe { PeerId::from_owned_raw(raw) })
     }
 
+    /// Sends data to peers through the `MultipeerConnectivity` session.
     pub fn send(&self, data: &[u8], peers: &[&PeerId], mode: SessionSendDataMode) -> Result<()> {
         if peers.is_empty() {
             return Err(MultipeerError::InvalidArgument(
@@ -353,6 +383,7 @@ impl Session {
         }
     }
 
+    /// Starts sending a resource through the `MultipeerConnectivity` session.
     pub fn send_resource(
         &self,
         path: impl AsRef<Path>,
@@ -362,6 +393,7 @@ impl Session {
         self.send_resource_impl(path, resource_name, peer, ptr::null_mut(), None)
     }
 
+    /// Starts sending a resource through the `MultipeerConnectivity` session with a completion callback.
     pub fn send_resource_with_completion<F>(
         &self,
         path: impl AsRef<Path>,
@@ -425,6 +457,7 @@ impl Session {
         Ok(ResourceTransfer { raw })
     }
 
+    /// Starts an outbound `MultipeerConnectivity` stream to a peer.
     pub fn start_stream(
         &self,
         stream_name: impl AsRef<str>,
@@ -446,10 +479,12 @@ impl Session {
         Ok(OutputStream { raw })
     }
 
+    /// Disconnects all peers from the `MultipeerConnectivity` session.
     pub fn disconnect(&self) {
         unsafe { ffi::session::mpc_session_disconnect(self.raw.as_ptr()) };
     }
 
+    /// Returns nearby-connection data for custom `MultipeerConnectivity` invitations.
     pub fn nearby_connection_data_for_peer(&self, peer: &PeerId) -> Result<Vec<u8>> {
         let mut bytes = ptr::null_mut();
         let mut length = 0usize;
@@ -474,6 +509,7 @@ impl Session {
         Ok(data)
     }
 
+    /// Connects a peer with custom `MultipeerConnectivity` nearby-connection data.
     pub fn connect_peer(&self, peer: &PeerId, nearby_connection_data: &[u8]) {
         unsafe {
             ffi::session::mpc_session_connect_peer(
@@ -485,10 +521,12 @@ impl Session {
         };
     }
 
+    /// Cancels a pending custom `MultipeerConnectivity` peer connection.
     pub fn cancel_connect_peer(&self, peer: &PeerId) {
         unsafe { ffi::session::mpc_session_cancel_connect_peer(self.raw.as_ptr(), peer.as_ptr()) };
     }
 
+    /// Installs basic `MultipeerConnectivity` session callbacks.
     pub fn set_delegate<F, G>(&mut self, on_state: F, on_data: G)
     where
         F: FnMut(PeerId, SessionState) + Send + 'static,
@@ -497,6 +535,7 @@ impl Session {
         self.set_callbacks(SessionDelegate::new().on_state(on_state).on_data(on_data));
     }
 
+    /// Installs typed `MultipeerConnectivity` session callbacks.
     pub fn set_callbacks(&mut self, callbacks: SessionDelegate) {
         self.clear_delegate();
         let has_certificate = callbacks.on_certificate.is_some();
@@ -523,6 +562,7 @@ impl Session {
         self.delegate_state = Some(ptr);
     }
 
+    /// Removes the `MultipeerConnectivity` session delegate.
     pub fn clear_delegate(&mut self) {
         if let Some(state) = self.delegate_state.take() {
             unsafe {
@@ -561,27 +601,32 @@ impl fmt::Debug for Session {
     }
 }
 
+/// Wraps a `MultipeerConnectivity` resource-transfer progress object.
 pub struct ResourceTransfer {
     raw: NonNull<c_void>,
 }
 
 impl ResourceTransfer {
     #[must_use]
+    /// Returns the `MultipeerConnectivity` resource-transfer completion fraction.
     pub fn fraction_completed(&self) -> f64 {
         unsafe { ffi::session::mpc_progress_fraction_completed(self.raw.as_ptr()) }
     }
 
     #[must_use]
+    /// Returns whether the `MultipeerConnectivity` resource transfer finished.
     pub fn is_finished(&self) -> bool {
         unsafe { ffi::session::mpc_progress_is_finished(self.raw.as_ptr()) }
     }
 
     #[must_use]
+    /// Returns the completed unit count for the `MultipeerConnectivity` resource transfer.
     pub fn completed_unit_count(&self) -> i64 {
         unsafe { ffi::session::mpc_progress_completed_unit_count(self.raw.as_ptr()) }
     }
 
     #[must_use]
+    /// Returns the total unit count for the `MultipeerConnectivity` resource transfer.
     pub fn total_unit_count(&self) -> i64 {
         unsafe { ffi::session::mpc_progress_total_unit_count(self.raw.as_ptr()) }
     }
@@ -608,19 +653,23 @@ impl fmt::Debug for ResourceTransfer {
     }
 }
 
+/// Wraps a `MultipeerConnectivity` output stream.
 pub struct OutputStream {
     raw: NonNull<c_void>,
 }
 
 impl OutputStream {
+    /// Opens the `MultipeerConnectivity` output stream.
     pub fn open(&self) {
         unsafe { ffi::session::mpc_output_stream_open(self.raw.as_ptr()) };
     }
 
+    /// Closes the `MultipeerConnectivity` output stream.
     pub fn close(&self) {
         unsafe { ffi::session::mpc_output_stream_close(self.raw.as_ptr()) };
     }
 
+    /// Writes bytes to the `MultipeerConnectivity` output stream.
     pub fn write(&self, bytes: &[u8]) -> Result<usize> {
         let mut error = ptr::null_mut();
         let written = unsafe {
@@ -649,24 +698,29 @@ impl Drop for OutputStream {
     }
 }
 
+/// Wraps a `MultipeerConnectivity` input stream.
 pub struct InputStream {
     raw: NonNull<c_void>,
 }
 
 impl InputStream {
+    /// Opens the `MultipeerConnectivity` input stream.
     pub fn open(&self) {
         unsafe { ffi::session::mpc_input_stream_open(self.raw.as_ptr()) };
     }
 
+    /// Closes the `MultipeerConnectivity` input stream.
     pub fn close(&self) {
         unsafe { ffi::session::mpc_input_stream_close(self.raw.as_ptr()) };
     }
 
     #[must_use]
+    /// Returns whether the `MultipeerConnectivity` input stream has buffered bytes.
     pub fn has_bytes_available(&self) -> bool {
         unsafe { ffi::session::mpc_input_stream_has_bytes_available(self.raw.as_ptr()) }
     }
 
+    /// Reads bytes from the `MultipeerConnectivity` input stream.
     pub fn read(&self, max_len: usize) -> Result<Vec<u8>> {
         let mut buffer = vec![0_u8; max_len];
         let mut error = ptr::null_mut();
@@ -707,11 +761,13 @@ impl fmt::Debug for InputStream {
 }
 
 #[must_use]
+/// Returns the minimum peer count supported by `MultipeerConnectivity` sessions.
 pub fn session_minimum_number_of_peers() -> usize {
     unsafe { ffi::session::mpc_session_minimum_number_of_peers() }
 }
 
 #[must_use]
+/// Returns the maximum peer count supported by `MultipeerConnectivity` sessions.
 pub fn session_maximum_number_of_peers() -> usize {
     unsafe { ffi::session::mpc_session_maximum_number_of_peers() }
 }
