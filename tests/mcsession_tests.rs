@@ -14,7 +14,15 @@ fn session_exposes_properties_and_delegate_setup() -> Result<()> {
         EncryptionPreference::Optional
     );
     assert!(session.connected_peers().is_empty());
-    session.set_callbacks(SessionDelegate::new());
+    session.set_callbacks(
+        SessionDelegate::new()
+            .on_state(|_peer, _state| {})
+            .on_data(|_peer, _data| {})
+            .on_stream(|_peer, _name, _stream| {})
+            .on_resource_started(|_peer, _name, _transfer| {})
+            .on_resource_finished(|_peer, _name, _path, _error| {})
+            .on_certificate(|_peer, _items| true),
+    );
     session.clear_delegate();
     Ok(())
 }

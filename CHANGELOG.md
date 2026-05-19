@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.0
+
+- Explicitly documented the five public delegate protocol declarations in `COVERAGE_AUDIT.md` / `COVERAGE_AUDIT_V2.md`, mapping them to the Rust callback builders and async event streams that already back the safe API.
+- Expanded delegate setup tests to exercise all five delegate wrapper builders, including the session / browser / advertiser async-backed surfaces.
+
 ## 0.3.2
 
 - Added concise rustdoc coverage across the non-FFI MultipeerConnectivity wrapper API, raising public-item coverage above 60%.

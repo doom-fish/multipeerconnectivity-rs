@@ -6,7 +6,7 @@ GAPS: 0
 EXEMPT: 0
 COVERAGE_PCT: 100.00%
 
-This audit counts logical Objective-C surface members (methods, properties, exported constants, and enum cases) from `MultipeerConnectivity.framework` headers. Container declarations such as `@interface`, `@protocol`, and enum type names are used to organize the review but are not counted separately. Delegate properties are treated as covered by the crate's callback-registration APIs even though the crate intentionally does not expose Objective-C delegate-object getters, and `PeerId::archived_data` / `PeerId::from_archived_data` are extra `NSSecureCoding` helpers that sit outside the header-derived symbol count.
+This audit counts logical Objective-C surface members (methods, properties, exported constants, and enum cases) from `MultipeerConnectivity.framework` headers. Container declarations such as `@interface`, `@protocol`, and enum type names are not counted separately, but the five public delegate protocol declarations are explicitly documented in a separate verification table below because the crate exposes them as Rust callback builders and async event streams where applicable. Delegate properties are treated as covered by the crate's callback-registration APIs even though the crate intentionally does not expose Objective-C delegate-object getters, and `PeerId::archived_data` / `PeerId::from_archived_data` are extra `NSSecureCoding` helpers that sit outside the header-derived symbol count.
 
 ## 🟢 VERIFIED
 | Symbol | Kind | Header | Wrapped by |
@@ -89,6 +89,15 @@ This audit counts logical Objective-C surface members (methods, properties, expo
 | `-browserViewControllerDidFinish:` | protocol method | `MCBrowserViewController.h` | `BrowserViewControllerDelegate::on_finish` |
 | `-browserViewControllerWasCancelled:` | protocol method | `MCBrowserViewController.h` | `BrowserViewControllerDelegate::on_cancel` |
 | `-browserViewController:shouldPresentNearbyPeer:withDiscoveryInfo:` | protocol method | `MCBrowserViewController.h` | `BrowserViewControllerDelegate::should_present_peer` |
+
+## 🟢 VERIFIED DELEGATE PROTOCOL DECLARATIONS (not counted)
+| Protocol | Header | Wrapped by |
+| --- | --- | --- |
+| `MCAdvertiserAssistantDelegate` | `MCAdvertiserAssistant.h` | `AdvertiserAssistantDelegate`, `AdvertiserAssistant::set_callbacks` |
+| `MCBrowserViewControllerDelegate` | `MCBrowserViewController.h` | `BrowserViewControllerDelegate`, `BrowserViewController::set_callbacks` |
+| `MCNearbyServiceAdvertiserDelegate` | `MCNearbyServiceAdvertiser.h` | `NearbyServiceAdvertiserDelegate`, `NearbyServiceAdvertiser::set_callbacks`, `async_api::AdvertiserEvent`, `async_api::AdvertiserEventStream` |
+| `MCNearbyServiceBrowserDelegate` | `MCNearbyServiceBrowser.h` | `NearbyServiceBrowserDelegate`, `NearbyServiceBrowser::set_callbacks`, `async_api::BrowserEvent`, `async_api::BrowserEventStream` |
+| `MCSessionDelegate` | `MCSession.h` | `SessionDelegate`, `Session::set_callbacks`, `async_api::SessionEvent`, `async_api::SessionEventStream` |
 
 ## 🔴 GAPS
 | Symbol | Kind | Header | Notes |

@@ -1,6 +1,6 @@
 use multipeerconnectivity::{
     session_maximum_number_of_peers, session_minimum_number_of_peers, BrowserViewController,
-    EncryptionPreference, PeerId, Result, Session,
+    BrowserViewControllerDelegate, EncryptionPreference, PeerId, Result, Session,
 };
 
 #[test]
@@ -8,8 +8,14 @@ use multipeerconnectivity::{
 fn browser_view_controller_roundtrips_properties() -> Result<()> {
     let peer = PeerId::new("doom-fish-ui")?;
     let session = Session::new(&peer, EncryptionPreference::Optional)?;
-    let controller = BrowserViewController::new_with_service_type("doom-chat", &session)?;
+    let mut controller = BrowserViewController::new_with_service_type("doom-chat", &session)?;
 
+    controller.set_callbacks(
+        BrowserViewControllerDelegate::new()
+            .on_finish(|| {})
+            .on_cancel(|| {})
+            .should_present_peer(|_peer, _info| true),
+    );
     controller.set_minimum_number_of_peers(session_minimum_number_of_peers());
     controller.set_maximum_number_of_peers(session_maximum_number_of_peers());
     assert_eq!(controller.browser().service_type(), "doom-chat");

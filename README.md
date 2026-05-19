@@ -2,7 +2,7 @@
 
 Safe Rust bindings for Apple's [MultipeerConnectivity](https://developer.apple.com/documentation/multipeerconnectivity) framework on macOS — peer IDs, sessions, nearby browser/advertiser APIs, advertiser assistant, browser view controller, and typed `MCError` handling.
 
-> **Status:** experimental. v0.3 covers the public MultipeerConnectivity surface for `MCPeerID`, `MCSession`, `MCNearbyServiceAdvertiser`, `MCNearbyServiceBrowser`, `MCAdvertiserAssistant`, `MCBrowserViewController`, `MCError`, and Tier-2 async event streams.
+> **Status:** experimental. v0.4 covers the public MultipeerConnectivity surface for `MCPeerID`, `MCSession`, `MCNearbyServiceAdvertiser`, `MCNearbyServiceBrowser`, `MCAdvertiserAssistant`, `MCBrowserViewController`, `MCError`, all five public delegate protocols via builder-style Rust wrappers, and Tier-2 async event streams where available.
 
 ## Package vs crate name
 
