@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.4.1] - 2026-05-20
+
+- Widen `doom-fish-utils` dependency bound to `<0.4` so the 0.3.x SPSC-ring release resolves cleanly. No source changes.
+
 ## 0.4.0
 
 - Explicitly documented the five public delegate protocol declarations in `COVERAGE_AUDIT.md` / `COVERAGE_AUDIT_V2.md`, mapping them to the Rust callback builders and async event streams that already back the safe API.
