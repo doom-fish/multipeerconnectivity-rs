@@ -84,6 +84,21 @@ impl Default for AdvertiserAssistantDelegate {
 
 struct AdvertiserAssistantDelegateState {
     callbacks: Mutex<AdvertiserAssistantDelegate>,
+    ref_count: crate::refcount::RefCount,
+}
+
+impl crate::refcount::RefCounted for AdvertiserAssistantDelegateState {
+    fn ref_count(&self) -> &crate::refcount::RefCount {
+        &self.ref_count
+    }
+}
+
+extern "C" fn advertiser_assistant_context_retain(context: *mut c_void) {
+    unsafe { crate::refcount::retain::<AdvertiserAssistantDelegateState>(context) };
+}
+
+extern "C" fn advertiser_assistant_context_release(context: *mut c_void) {
+    unsafe { crate::refcount::release::<AdvertiserAssistantDelegateState>(context) };
 }
 
 /// Wraps a `MultipeerConnectivity` `MCAdvertiserAssistant`.
@@ -189,6 +204,7 @@ impl AdvertiserAssistant {
         let has_did = callbacks.on_did_dismiss_invitation.is_some();
         let state = Box::new(AdvertiserAssistantDelegateState {
             callbacks: Mutex::new(callbacks),
+            ref_count: crate::refcount::RefCount::new(),
         });
         let ptr = NonNull::from(Box::leak(state));
         unsafe {
@@ -205,6 +221,8 @@ impl AdvertiserAssistant {
                 } else {
                     None
                 },
+                advertiser_assistant_context_retain,
+                advertiser_assistant_context_release,
             );
         }
         self.delegate_state = Some(ptr);
@@ -217,7 +235,9 @@ impl AdvertiserAssistant {
                 ffi::advertiser_assistant::mpc_advertiser_assistant_clear_delegate(
                     self.raw.as_ptr(),
                 );
-                drop(Box::from_raw(state.as_ptr()));
+                crate::refcount::release::<AdvertiserAssistantDelegateState>(
+                    state.as_ptr().cast::<c_void>(),
+                );
             }
         }
     }

@@ -50,12 +50,15 @@ use crate::session::{InputStream, ResourceTransfer, SecurityIdentityItem, Sessio
 pub const DEFAULT_CAPACITY: usize = 64;
 
 type EventCallback = unsafe extern "C" fn(i32, *const c_void, *mut c_void);
+type CtxRetainCallback = unsafe extern "C" fn(*mut c_void);
 
 extern "C" {
     fn mpc_session_stream_subscribe(
         session: *mut c_void,
         on_event: EventCallback,
         ctx: *mut c_void,
+        ctx_retain: CtxRetainCallback,
+        ctx_release: CtxRetainCallback,
     ) -> *mut c_void;
     fn mpc_session_stream_unsubscribe(handle: *mut c_void);
 
@@ -63,6 +66,8 @@ extern "C" {
         browser: *mut c_void,
         on_event: EventCallback,
         ctx: *mut c_void,
+        ctx_retain: CtxRetainCallback,
+        ctx_release: CtxRetainCallback,
     ) -> *mut c_void;
     fn mpc_browser_stream_unsubscribe(handle: *mut c_void);
 
@@ -70,27 +75,86 @@ extern "C" {
         advertiser: *mut c_void,
         on_event: EventCallback,
         ctx: *mut c_void,
+        ctx_retain: CtxRetainCallback,
+        ctx_release: CtxRetainCallback,
     ) -> *mut c_void;
     fn mpc_advertiser_stream_unsubscribe(handle: *mut c_void);
 
     fn mpc_invitation_handle_accept(handle: *mut c_void, session: *mut c_void);
     fn mpc_invitation_handle_decline(handle: *mut c_void);
+
+    /// Cross-language ABI check for the packed event payload structs. Returns
+    /// `true` only if the Swift `MemoryLayout` matches the Rust layout asserted
+    /// below. Verified by `tests/async_stream_tests.rs`.
+    fn mpc_async_verify_ffi_layout() -> bool;
 }
 
-/// Drops the async bridge and the boxed sender when the stream is dropped.
+/// Reference-counted wrapper around the event-stream sender shared with Swift.
+///
+/// The raw pointer to this box is handed to the Swift bridge as the callback
+/// context. Swift takes a `+1` in the bridge object's `init` and drops it in
+/// `deinit` (via the `ctx_retain`/`ctx_release` trampolines), so an event
+/// callback already in flight on a background queue can never deref a freed
+/// sender when the Rust [`SubscriptionHandle`] is dropped.
+struct SenderContext<E> {
+    sender: AsyncStreamSender<E>,
+    ref_count: crate::refcount::RefCount,
+}
+
+impl<E> SenderContext<E> {
+    fn new(sender: AsyncStreamSender<E>) -> *mut Self {
+        Box::into_raw(Box::new(Self {
+            sender,
+            ref_count: crate::refcount::RefCount::new(),
+        }))
+    }
+}
+
+impl<E> crate::refcount::RefCounted for SenderContext<E> {
+    fn ref_count(&self) -> &crate::refcount::RefCount {
+        &self.ref_count
+    }
+}
+
+extern "C" fn session_ctx_retain(ctx: *mut c_void) {
+    unsafe { crate::refcount::retain::<SenderContext<SessionEvent>>(ctx) };
+}
+extern "C" fn session_ctx_release(ctx: *mut c_void) {
+    unsafe { crate::refcount::release::<SenderContext<SessionEvent>>(ctx) };
+}
+extern "C" fn browser_ctx_retain(ctx: *mut c_void) {
+    unsafe { crate::refcount::retain::<SenderContext<BrowserEvent>>(ctx) };
+}
+extern "C" fn browser_ctx_release(ctx: *mut c_void) {
+    unsafe { crate::refcount::release::<SenderContext<BrowserEvent>>(ctx) };
+}
+extern "C" fn advertiser_ctx_retain(ctx: *mut c_void) {
+    unsafe { crate::refcount::retain::<SenderContext<AdvertiserEvent>>(ctx) };
+}
+extern "C" fn advertiser_ctx_release(ctx: *mut c_void) {
+    unsafe { crate::refcount::release::<SenderContext<AdvertiserEvent>>(ctx) };
+}
+
+/// Drops the async bridge and releases the boxed sender context when the stream
+/// is dropped.
 struct SubscriptionHandle<E> {
     bridge_handle: *mut c_void,
-    sender: *mut AsyncStreamSender<E>,
+    ctx: *mut SenderContext<E>,
     unsubscribe_fn: unsafe extern "C" fn(*mut c_void),
+    ctx_release_fn: unsafe extern "C" fn(*mut c_void),
 }
 
 impl<E> Drop for SubscriptionHandle<E> {
     fn drop(&mut self) {
+        // Unsubscribe first so the Swift bridge object detaches its delegate
+        // and (absent any in-flight callback) drops its `+1` on the context.
         if !self.bridge_handle.is_null() {
             unsafe { (self.unsubscribe_fn)(self.bridge_handle) };
         }
-        if !self.sender.is_null() {
-            unsafe { drop(Box::from_raw(self.sender)) };
+        // Then drop the Rust-owned reference. The box is freed only once the
+        // Swift side has also released, so an in-flight `event_cb` is safe.
+        if !self.ctx.is_null() {
+            unsafe { (self.ctx_release_fn)(self.ctx.cast()) };
         }
     }
 }
@@ -100,6 +164,88 @@ impl<E> Drop for SubscriptionHandle<E> {
 unsafe impl<E: Send> Send for SubscriptionHandle<E> {}
 // SAFETY: see `Send` above; shared access only reaches the internally locked sender.
 unsafe impl<E: Send> Sync for SubscriptionHandle<E> {}
+
+// MARK: - ABI Layout Assertions
+//
+// The `#[repr(C)]` payload structs below are written by the Swift async bridge
+// (`swift-bridge/Sources/MultipeerConnectivityBridge/AsyncStream.swift`) and
+// read back here by casting the opaque `payload` pointer in each `*_event_cb`.
+// If a field type, order, or padding ever drifts between the two sides the
+// marshalled data silently corrupts. These compile-time assertions pin the
+// exact ABI; the cross-language `mpc_async_verify_ffi_layout` check in
+// `tests/async_stream_tests.rs` guards that Swift agrees.
+use core::mem::{align_of, offset_of, size_of};
+
+const _: () = assert!(size_of::<SessionStatePayload>() == 16);
+const _: () = assert!(align_of::<SessionStatePayload>() == 8);
+const _: () = assert!(offset_of!(SessionStatePayload, peer) == 0);
+const _: () = assert!(offset_of!(SessionStatePayload, state) == 8);
+
+const _: () = assert!(size_of::<SessionDataPayload>() == 24);
+const _: () = assert!(align_of::<SessionDataPayload>() == 8);
+const _: () = assert!(offset_of!(SessionDataPayload, peer) == 0);
+const _: () = assert!(offset_of!(SessionDataPayload, data) == 8);
+const _: () = assert!(offset_of!(SessionDataPayload, len) == 16);
+
+const _: () = assert!(size_of::<SessionStreamPayload>() == 24);
+const _: () = assert!(align_of::<SessionStreamPayload>() == 8);
+const _: () = assert!(offset_of!(SessionStreamPayload, peer) == 0);
+const _: () = assert!(offset_of!(SessionStreamPayload, name) == 8);
+const _: () = assert!(offset_of!(SessionStreamPayload, stream) == 16);
+
+const _: () = assert!(size_of::<SessionResourceStartPayload>() == 24);
+const _: () = assert!(align_of::<SessionResourceStartPayload>() == 8);
+const _: () = assert!(offset_of!(SessionResourceStartPayload, peer) == 0);
+const _: () = assert!(offset_of!(SessionResourceStartPayload, name) == 8);
+const _: () = assert!(offset_of!(SessionResourceStartPayload, progress) == 16);
+
+const _: () = assert!(size_of::<SessionResourceFinishPayload>() == 32);
+const _: () = assert!(align_of::<SessionResourceFinishPayload>() == 8);
+const _: () = assert!(offset_of!(SessionResourceFinishPayload, peer) == 0);
+const _: () = assert!(offset_of!(SessionResourceFinishPayload, name) == 8);
+const _: () = assert!(offset_of!(SessionResourceFinishPayload, url_path) == 16);
+const _: () = assert!(offset_of!(SessionResourceFinishPayload, error) == 24);
+
+const _: () = assert!(size_of::<SessionCertPayload>() == 24);
+const _: () = assert!(align_of::<SessionCertPayload>() == 8);
+const _: () = assert!(offset_of!(SessionCertPayload, peer) == 0);
+const _: () = assert!(offset_of!(SessionCertPayload, items) == 8);
+const _: () = assert!(offset_of!(SessionCertPayload, count) == 16);
+
+const _: () = assert!(size_of::<BrowserFoundPayload>() == 16);
+const _: () = assert!(align_of::<BrowserFoundPayload>() == 8);
+const _: () = assert!(offset_of!(BrowserFoundPayload, peer) == 0);
+const _: () = assert!(offset_of!(BrowserFoundPayload, discovery_json) == 8);
+
+const _: () = assert!(size_of::<BrowserLostPayload>() == 8);
+const _: () = assert!(align_of::<BrowserLostPayload>() == 8);
+const _: () = assert!(offset_of!(BrowserLostPayload, peer) == 0);
+
+const _: () = assert!(size_of::<BrowserErrorPayload>() == 8);
+const _: () = assert!(align_of::<BrowserErrorPayload>() == 8);
+const _: () = assert!(offset_of!(BrowserErrorPayload, error) == 0);
+
+const _: () = assert!(size_of::<AdvertiserInvitationPayload>() == 32);
+const _: () = assert!(align_of::<AdvertiserInvitationPayload>() == 8);
+const _: () = assert!(offset_of!(AdvertiserInvitationPayload, peer) == 0);
+const _: () = assert!(offset_of!(AdvertiserInvitationPayload, context_ptr) == 8);
+const _: () = assert!(offset_of!(AdvertiserInvitationPayload, context_len) == 16);
+const _: () = assert!(offset_of!(AdvertiserInvitationPayload, invitation_handle) == 24);
+
+const _: () = assert!(size_of::<AdvertiserErrorPayload>() == 8);
+const _: () = assert!(align_of::<AdvertiserErrorPayload>() == 8);
+const _: () = assert!(offset_of!(AdvertiserErrorPayload, error) == 0);
+
+/// Asks the Swift bridge to confirm its `MemoryLayout` for every packed event
+/// payload struct matches the Rust layout pinned by the `const _` asserts above.
+///
+/// Returns `false` on a genuine ABI mismatch between the Rust and Swift sides.
+#[must_use]
+pub fn verify_ffi_layout() -> bool {
+    // SAFETY: the Swift function takes no arguments and only reads compile-time
+    // `MemoryLayout` constants.
+    unsafe { mpc_async_verify_ffi_layout() }
+}
 
 #[repr(C)]
 struct SessionStatePayload {
@@ -204,11 +350,11 @@ pub enum SessionEvent {
 }
 
 unsafe extern "C" fn session_event_cb(kind: i32, payload: *const c_void, ctx: *mut c_void) {
-    let Some(sender) = NonNull::new(ctx.cast::<AsyncStreamSender<SessionEvent>>()) else {
+    let Some(ctx) = NonNull::new(ctx.cast::<SenderContext<SessionEvent>>()) else {
         return;
     };
     catch_user_panic("session_event_cb", || {
-        let sender = unsafe { sender.as_ref() };
+        let sender = &unsafe { ctx.as_ref() }.sender;
         let event = match kind {
             0 => {
                 let p = unsafe { &*payload.cast::<SessionStatePayload>() };
@@ -322,16 +468,23 @@ impl SessionEventStream {
     #[must_use]
     pub fn subscribe(session: &Session, capacity: usize) -> Self {
         let (stream, sender) = BoundedAsyncStream::new(capacity);
-        let sender_ptr = Box::into_raw(Box::new(sender));
+        let ctx = SenderContext::new(sender);
         let handle = unsafe {
-            mpc_session_stream_subscribe(session.as_ptr(), session_event_cb, sender_ptr.cast())
+            mpc_session_stream_subscribe(
+                session.as_ptr(),
+                session_event_cb,
+                ctx.cast(),
+                session_ctx_retain,
+                session_ctx_release,
+            )
         };
         Self {
             inner: stream,
             _handle: SubscriptionHandle {
                 bridge_handle: handle,
-                sender: sender_ptr,
+                ctx,
                 unsubscribe_fn: mpc_session_stream_unsubscribe,
+                ctx_release_fn: session_ctx_release,
             },
         }
     }
@@ -404,11 +557,11 @@ pub enum BrowserEvent {
 }
 
 unsafe extern "C" fn browser_event_cb(kind: i32, payload: *const c_void, ctx: *mut c_void) {
-    let Some(sender) = NonNull::new(ctx.cast::<AsyncStreamSender<BrowserEvent>>()) else {
+    let Some(ctx) = NonNull::new(ctx.cast::<SenderContext<BrowserEvent>>()) else {
         return;
     };
     catch_user_panic("browser_event_cb", || {
-        let sender = unsafe { sender.as_ref() };
+        let sender = &unsafe { ctx.as_ref() }.sender;
         let event = match kind {
             0 => {
                 let p = unsafe { &*payload.cast::<BrowserFoundPayload>() };
@@ -459,16 +612,23 @@ impl BrowserEventStream {
     #[must_use]
     pub fn subscribe(browser: &NearbyServiceBrowser, capacity: usize) -> Self {
         let (stream, sender) = BoundedAsyncStream::new(capacity);
-        let sender_ptr = Box::into_raw(Box::new(sender));
+        let ctx = SenderContext::new(sender);
         let handle = unsafe {
-            mpc_browser_stream_subscribe(browser.as_ptr(), browser_event_cb, sender_ptr.cast())
+            mpc_browser_stream_subscribe(
+                browser.as_ptr(),
+                browser_event_cb,
+                ctx.cast(),
+                browser_ctx_retain,
+                browser_ctx_release,
+            )
         };
         Self {
             inner: stream,
             _handle: SubscriptionHandle {
                 bridge_handle: handle,
-                sender: sender_ptr,
+                ctx,
                 unsubscribe_fn: mpc_browser_stream_unsubscribe,
+                ctx_release_fn: browser_ctx_release,
             },
         }
     }
@@ -586,11 +746,11 @@ impl std::fmt::Debug for AdvertiserEvent {
 }
 
 unsafe extern "C" fn advertiser_event_cb(kind: i32, payload: *const c_void, ctx: *mut c_void) {
-    let Some(sender) = NonNull::new(ctx.cast::<AsyncStreamSender<AdvertiserEvent>>()) else {
+    let Some(ctx) = NonNull::new(ctx.cast::<SenderContext<AdvertiserEvent>>()) else {
         return;
     };
     catch_user_panic("advertiser_event_cb", || {
-        let sender = unsafe { sender.as_ref() };
+        let sender = &unsafe { ctx.as_ref() }.sender;
         let event = match kind {
             0 => {
                 let p = unsafe { &*payload.cast::<AdvertiserInvitationPayload>() };
@@ -645,20 +805,23 @@ impl AdvertiserEventStream {
     #[must_use]
     pub fn subscribe(advertiser: &NearbyServiceAdvertiser, capacity: usize) -> Self {
         let (stream, sender) = BoundedAsyncStream::new(capacity);
-        let sender_ptr = Box::into_raw(Box::new(sender));
+        let ctx = SenderContext::new(sender);
         let handle = unsafe {
             mpc_advertiser_stream_subscribe(
                 advertiser.as_ptr(),
                 advertiser_event_cb,
-                sender_ptr.cast(),
+                ctx.cast(),
+                advertiser_ctx_retain,
+                advertiser_ctx_release,
             )
         };
         Self {
             inner: stream,
             _handle: SubscriptionHandle {
                 bridge_handle: handle,
-                sender: sender_ptr,
+                ctx,
                 unsubscribe_fn: mpc_advertiser_stream_unsubscribe,
+                ctx_release_fn: advertiser_ctx_release,
             },
         }
     }

@@ -117,6 +117,21 @@ impl Default for NearbyServiceAdvertiserDelegate {
 
 struct AdvertiserDelegateState {
     callbacks: Mutex<NearbyServiceAdvertiserDelegate>,
+    ref_count: crate::refcount::RefCount,
+}
+
+impl crate::refcount::RefCounted for AdvertiserDelegateState {
+    fn ref_count(&self) -> &crate::refcount::RefCount {
+        &self.ref_count
+    }
+}
+
+extern "C" fn advertiser_context_retain(context: *mut c_void) {
+    unsafe { crate::refcount::retain::<AdvertiserDelegateState>(context) };
+}
+
+extern "C" fn advertiser_context_release(context: *mut c_void) {
+    unsafe { crate::refcount::release::<AdvertiserDelegateState>(context) };
 }
 
 /// Wraps a `MultipeerConnectivity` `MCNearbyServiceAdvertiser`.
@@ -235,6 +250,7 @@ impl NearbyServiceAdvertiser {
         let has_error = callbacks.on_error.is_some();
         let state = Box::new(AdvertiserDelegateState {
             callbacks: Mutex::new(callbacks),
+            ref_count: crate::refcount::RefCount::new(),
         });
         let ptr = NonNull::from(Box::leak(state));
         unsafe {
@@ -247,6 +263,8 @@ impl NearbyServiceAdvertiser {
                 } else {
                     None
                 },
+                advertiser_context_retain,
+                advertiser_context_release,
             );
         }
         self.delegate_state = Some(ptr);
@@ -257,7 +275,9 @@ impl NearbyServiceAdvertiser {
         if let Some(state) = self.delegate_state.take() {
             unsafe {
                 ffi::advertiser::mpc_advertiser_clear_delegate(self.raw.as_ptr());
-                drop(Box::from_raw(state.as_ptr()));
+                crate::refcount::release::<AdvertiserDelegateState>(
+                    state.as_ptr().cast::<c_void>(),
+                );
             }
         }
     }

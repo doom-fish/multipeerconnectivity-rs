@@ -101,6 +101,21 @@ impl Default for NearbyServiceBrowserDelegate {
 
 struct BrowserDelegateState {
     callbacks: Mutex<NearbyServiceBrowserDelegate>,
+    ref_count: crate::refcount::RefCount,
+}
+
+impl crate::refcount::RefCounted for BrowserDelegateState {
+    fn ref_count(&self) -> &crate::refcount::RefCount {
+        &self.ref_count
+    }
+}
+
+extern "C" fn browser_context_retain(context: *mut c_void) {
+    unsafe { crate::refcount::retain::<BrowserDelegateState>(context) };
+}
+
+extern "C" fn browser_context_release(context: *mut c_void) {
+    unsafe { crate::refcount::release::<BrowserDelegateState>(context) };
 }
 
 /// Wraps a `MultipeerConnectivity` `MCNearbyServiceBrowser`.
@@ -196,6 +211,7 @@ impl NearbyServiceBrowser {
         let has_error = callbacks.on_error.is_some();
         let state = Box::new(BrowserDelegateState {
             callbacks: Mutex::new(callbacks),
+            ref_count: crate::refcount::RefCount::new(),
         });
         let ptr = NonNull::from(Box::leak(state));
         unsafe {
@@ -209,6 +225,8 @@ impl NearbyServiceBrowser {
                 } else {
                     None
                 },
+                browser_context_retain,
+                browser_context_release,
             );
         }
         self.delegate_state = Some(ptr);
@@ -219,7 +237,7 @@ impl NearbyServiceBrowser {
         if let Some(state) = self.delegate_state.take() {
             unsafe {
                 ffi::browser::mpc_browser_clear_delegate(self.raw.as_ptr());
-                drop(Box::from_raw(state.as_ptr()));
+                crate::refcount::release::<BrowserDelegateState>(state.as_ptr().cast::<c_void>());
             }
         }
     }

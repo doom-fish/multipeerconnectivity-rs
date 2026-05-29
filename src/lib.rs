@@ -14,6 +14,7 @@ pub mod browser_view_controller;
 pub mod error;
 pub mod ffi;
 pub mod peer;
+pub(crate) mod refcount;
 pub mod session;
 
 pub use advertiser::{

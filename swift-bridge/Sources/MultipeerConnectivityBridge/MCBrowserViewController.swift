@@ -87,6 +87,7 @@ public typealias MpcBrowserViewControllerShouldPresentCallback = @convention(c) 
 
 private final class BrowserViewControllerDelegateBox: NSObject, MCBrowserViewControllerDelegate {
     let context: UnsafeMutableRawPointer?
+    let retention: ContextRetention
     let finishCallback: MpcBrowserViewControllerCallback?
     let cancelCallback: MpcBrowserViewControllerCallback?
     let shouldPresentCallback: MpcBrowserViewControllerShouldPresentCallback?
@@ -95,9 +96,12 @@ private final class BrowserViewControllerDelegateBox: NSObject, MCBrowserViewCon
         context: UnsafeMutableRawPointer?,
         finishCallback: MpcBrowserViewControllerCallback?,
         cancelCallback: MpcBrowserViewControllerCallback?,
-        shouldPresentCallback: MpcBrowserViewControllerShouldPresentCallback?
+        shouldPresentCallback: MpcBrowserViewControllerShouldPresentCallback?,
+        contextRetain: MpcContextRetainCallback,
+        contextRelease: MpcContextRetainCallback
     ) {
         self.context = context
+        self.retention = ContextRetention(context: context, retain: contextRetain, release: contextRelease)
         self.finishCallback = finishCallback
         self.cancelCallback = cancelCallback
         self.shouldPresentCallback = shouldPresentCallback
@@ -142,7 +146,9 @@ public func mpc_browser_view_controller_set_delegate(
     _ context: UnsafeMutableRawPointer?,
     _ finishCallback: MpcBrowserViewControllerCallback?,
     _ cancelCallback: MpcBrowserViewControllerCallback?,
-    _ shouldPresentCallback: MpcBrowserViewControllerShouldPresentCallback?
+    _ shouldPresentCallback: MpcBrowserViewControllerShouldPresentCallback?,
+    _ contextRetain: MpcContextRetainCallback,
+    _ contextRelease: MpcContextRetainCallback
 ) {
     onMain {
         let value = browserViewController(controllerPtr)
@@ -150,7 +156,9 @@ public func mpc_browser_view_controller_set_delegate(
             context: context,
             finishCallback: finishCallback,
             cancelCallback: cancelCallback,
-            shouldPresentCallback: shouldPresentCallback
+            shouldPresentCallback: shouldPresentCallback,
+            contextRetain: contextRetain,
+            contextRelease: contextRelease
         )
         value.delegate = delegate
         browserViewControllerDelegatesLock.lock()

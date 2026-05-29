@@ -67,15 +67,19 @@ public typealias MpcAdvertiserAssistantCallback = @convention(c) (UnsafeMutableR
 
 private final class AdvertiserAssistantDelegateBox: NSObject, MCAdvertiserAssistantDelegate {
     let context: UnsafeMutableRawPointer?
+    let retention: ContextRetention
     let willPresentCallback: MpcAdvertiserAssistantCallback?
     let didDismissCallback: MpcAdvertiserAssistantCallback?
 
     init(
         context: UnsafeMutableRawPointer?,
         willPresentCallback: MpcAdvertiserAssistantCallback?,
-        didDismissCallback: MpcAdvertiserAssistantCallback?
+        didDismissCallback: MpcAdvertiserAssistantCallback?,
+        contextRetain: MpcContextRetainCallback,
+        contextRelease: MpcContextRetainCallback
     ) {
         self.context = context
+        self.retention = ContextRetention(context: context, retain: contextRetain, release: contextRelease)
         self.willPresentCallback = willPresentCallback
         self.didDismissCallback = didDismissCallback
     }
@@ -107,14 +111,18 @@ public func mpc_advertiser_assistant_set_delegate(
     _ assistantPtr: UnsafeMutableRawPointer,
     _ context: UnsafeMutableRawPointer?,
     _ willPresentCallback: MpcAdvertiserAssistantCallback?,
-    _ didDismissCallback: MpcAdvertiserAssistantCallback?
+    _ didDismissCallback: MpcAdvertiserAssistantCallback?,
+    _ contextRetain: MpcContextRetainCallback,
+    _ contextRelease: MpcContextRetainCallback
 ) {
     onMain {
         let value = advertiserAssistant(assistantPtr)
         let delegate = AdvertiserAssistantDelegateBox(
             context: context,
             willPresentCallback: willPresentCallback,
-            didDismissCallback: didDismissCallback
+            didDismissCallback: didDismissCallback,
+            contextRetain: contextRetain,
+            contextRelease: contextRelease
         )
         value.delegate = delegate
         advertiserAssistantDelegatesLock.lock()

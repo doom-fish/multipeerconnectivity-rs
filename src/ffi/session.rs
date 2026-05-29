@@ -110,6 +110,8 @@ extern "C" {
         on_resource_started: Option<SessionResourceStartCallback>,
         on_resource_finished: Option<SessionResourceFinishCallback>,
         on_certificate: Option<SessionCertificateCallback>,
+        context_retain: crate::ffi::core::ContextRetainCallback,
+        context_release: crate::ffi::core::ContextRetainCallback,
     );
     pub fn mpc_session_clear_delegate(session: *mut c_void);
 }

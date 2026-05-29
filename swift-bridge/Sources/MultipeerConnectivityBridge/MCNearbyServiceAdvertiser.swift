@@ -66,15 +66,19 @@ public typealias MpcAdvertiserErrorCallback = @convention(c) (
 
 private final class AdvertiserDelegateBox: NSObject, MCNearbyServiceAdvertiserDelegate {
     let context: UnsafeMutableRawPointer?
+    let retention: ContextRetention
     let invitationCallback: MpcAdvertiserInvitationCallback?
     let errorCallback: MpcAdvertiserErrorCallback?
 
     init(
         context: UnsafeMutableRawPointer?,
         invitationCallback: MpcAdvertiserInvitationCallback?,
-        errorCallback: MpcAdvertiserErrorCallback?
+        errorCallback: MpcAdvertiserErrorCallback?,
+        contextRetain: MpcContextRetainCallback,
+        contextRelease: MpcContextRetainCallback
     ) {
         self.context = context
+        self.retention = ContextRetention(context: context, retain: contextRetain, release: contextRelease)
         self.invitationCallback = invitationCallback
         self.errorCallback = errorCallback
     }
@@ -123,13 +127,17 @@ public func mpc_advertiser_set_delegate(
     _ advertiserPtr: UnsafeMutableRawPointer,
     _ context: UnsafeMutableRawPointer?,
     _ invitationCallback: MpcAdvertiserInvitationCallback?,
-    _ errorCallback: MpcAdvertiserErrorCallback?
+    _ errorCallback: MpcAdvertiserErrorCallback?,
+    _ contextRetain: MpcContextRetainCallback,
+    _ contextRelease: MpcContextRetainCallback
 ) {
     let value = advertiser(advertiserPtr)
     let delegate = AdvertiserDelegateBox(
         context: context,
         invitationCallback: invitationCallback,
-        errorCallback: errorCallback
+        errorCallback: errorCallback,
+        contextRetain: contextRetain,
+        contextRelease: contextRelease
     )
     value.delegate = delegate
     advertiserDelegatesLock.lock()

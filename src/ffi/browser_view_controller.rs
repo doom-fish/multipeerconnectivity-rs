@@ -31,6 +31,8 @@ extern "C" {
         on_finish: Option<BrowserViewControllerCallback>,
         on_cancel: Option<BrowserViewControllerCallback>,
         should_present: Option<BrowserViewControllerShouldPresentCallback>,
+        context_retain: crate::ffi::core::ContextRetainCallback,
+        context_release: crate::ffi::core::ContextRetainCallback,
     );
     pub fn mpc_browser_view_controller_clear_delegate(controller: *mut c_void);
 }

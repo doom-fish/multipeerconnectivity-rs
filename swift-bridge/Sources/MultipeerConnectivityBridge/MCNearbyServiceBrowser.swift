@@ -70,6 +70,7 @@ public typealias MpcBrowserErrorCallback = @convention(c) (
 
 private final class BrowserDelegateBox: NSObject, MCNearbyServiceBrowserDelegate {
     let context: UnsafeMutableRawPointer?
+    let retention: ContextRetention
     let foundCallback: MpcBrowserFoundCallback?
     let lostCallback: MpcBrowserLostCallback?
     let errorCallback: MpcBrowserErrorCallback?
@@ -78,9 +79,12 @@ private final class BrowserDelegateBox: NSObject, MCNearbyServiceBrowserDelegate
         context: UnsafeMutableRawPointer?,
         foundCallback: MpcBrowserFoundCallback?,
         lostCallback: MpcBrowserLostCallback?,
-        errorCallback: MpcBrowserErrorCallback?
+        errorCallback: MpcBrowserErrorCallback?,
+        contextRetain: MpcContextRetainCallback,
+        contextRelease: MpcContextRetainCallback
     ) {
         self.context = context
+        self.retention = ContextRetention(context: context, retain: contextRetain, release: contextRelease)
         self.foundCallback = foundCallback
         self.lostCallback = lostCallback
         self.errorCallback = errorCallback
@@ -124,14 +128,18 @@ public func mpc_browser_set_delegate(
     _ context: UnsafeMutableRawPointer?,
     _ foundCallback: MpcBrowserFoundCallback?,
     _ lostCallback: MpcBrowserLostCallback?,
-    _ errorCallback: MpcBrowserErrorCallback?
+    _ errorCallback: MpcBrowserErrorCallback?,
+    _ contextRetain: MpcContextRetainCallback,
+    _ contextRelease: MpcContextRetainCallback
 ) {
     let value = browser(browserPtr)
     let delegate = BrowserDelegateBox(
         context: context,
         foundCallback: foundCallback,
         lostCallback: lostCallback,
-        errorCallback: errorCallback
+        errorCallback: errorCallback,
+        contextRetain: contextRetain,
+        contextRelease: contextRelease
     )
     value.delegate = delegate
     browserDelegatesLock.lock()

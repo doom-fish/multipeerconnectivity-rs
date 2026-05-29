@@ -24,6 +24,8 @@ extern "C" {
         on_found: Option<BrowserFoundCallback>,
         on_lost: Option<BrowserLostCallback>,
         on_error: Option<BrowserErrorCallback>,
+        context_retain: crate::ffi::core::ContextRetainCallback,
+        context_release: crate::ffi::core::ContextRetainCallback,
     );
     pub fn mpc_browser_clear_delegate(browser: *mut c_void);
 }

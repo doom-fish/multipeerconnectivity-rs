@@ -410,6 +410,7 @@ public typealias MpcSessionCertificateCallback = @convention(c) (
 
 private final class SessionDelegateBox: NSObject, MCSessionDelegate {
     let context: UnsafeMutableRawPointer?
+    let retention: ContextRetention
     let stateCallback: MpcSessionStateCallback?
     let dataCallback: MpcSessionDataCallback?
     let streamCallback: MpcSessionStreamCallback?
@@ -424,9 +425,12 @@ private final class SessionDelegateBox: NSObject, MCSessionDelegate {
         streamCallback: MpcSessionStreamCallback?,
         resourceStartCallback: MpcSessionResourceStartCallback?,
         resourceFinishCallback: MpcSessionResourceFinishCallback?,
-        certificateCallback: MpcSessionCertificateCallback?
+        certificateCallback: MpcSessionCertificateCallback?,
+        contextRetain: MpcContextRetainCallback,
+        contextRelease: MpcContextRetainCallback
     ) {
         self.context = context
+        self.retention = ContextRetention(context: context, retain: contextRetain, release: contextRelease)
         self.stateCallback = stateCallback
         self.dataCallback = dataCallback
         self.streamCallback = streamCallback
@@ -535,7 +539,9 @@ public func mpc_session_set_delegate(
     _ streamCallback: MpcSessionStreamCallback?,
     _ resourceStartCallback: MpcSessionResourceStartCallback?,
     _ resourceFinishCallback: MpcSessionResourceFinishCallback?,
-    _ certificateCallback: MpcSessionCertificateCallback?
+    _ certificateCallback: MpcSessionCertificateCallback?,
+    _ contextRetain: MpcContextRetainCallback,
+    _ contextRelease: MpcContextRetainCallback
 ) {
     let value = session(sessionPtr)
     let delegate = SessionDelegateBox(
@@ -545,7 +551,9 @@ public func mpc_session_set_delegate(
         streamCallback: streamCallback,
         resourceStartCallback: resourceStartCallback,
         resourceFinishCallback: resourceFinishCallback,
-        certificateCallback: certificateCallback
+        certificateCallback: certificateCallback,
+        contextRetain: contextRetain,
+        contextRelease: contextRelease
     )
     value.delegate = delegate
     sessionDelegatesLock.lock()

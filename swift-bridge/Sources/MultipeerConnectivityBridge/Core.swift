@@ -15,6 +15,39 @@ final class ObjectBox: NSObject {
     }
 }
 
+/// C trampoline supplied by Rust so a delegate wrapper can take (`retain`) or
+/// drop (`release`) a strong reference on the Rust-owned delegate context.
+public typealias MpcContextRetainCallback = @convention(c) (UnsafeMutableRawPointer) -> Void
+
+/// Ties the lifetime of a Rust delegate context to a Swift delegate wrapper.
+///
+/// Construct one in the wrapper's `init` (taking a `+1` on the context) and let
+/// ARC release it in the wrapper's `deinit`. While a delegate callback is in
+/// flight ARC keeps the wrapper — and therefore this token — alive, so the Rust
+/// context cannot be freed underneath an executing callback.
+final class ContextRetention {
+    let context: UnsafeMutableRawPointer?
+    private let release: MpcContextRetainCallback?
+
+    init(
+        context: UnsafeMutableRawPointer?,
+        retain: MpcContextRetainCallback?,
+        release: MpcContextRetainCallback?
+    ) {
+        self.context = context
+        self.release = release
+        if let context, let retain {
+            retain(context)
+        }
+    }
+
+    deinit {
+        if let context, let release {
+            release(context)
+        }
+    }
+}
+
 func ffiString(_ string: String?) -> UnsafeMutablePointer<CChar>? {
     guard let string else { return nil }
     return string.withCString { strdup($0) }

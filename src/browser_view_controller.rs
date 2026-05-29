@@ -105,6 +105,21 @@ impl Default for BrowserViewControllerDelegate {
 
 struct BrowserViewControllerDelegateState {
     callbacks: Mutex<BrowserViewControllerDelegate>,
+    ref_count: crate::refcount::RefCount,
+}
+
+impl crate::refcount::RefCounted for BrowserViewControllerDelegateState {
+    fn ref_count(&self) -> &crate::refcount::RefCount {
+        &self.ref_count
+    }
+}
+
+extern "C" fn browser_view_controller_context_retain(context: *mut c_void) {
+    unsafe { crate::refcount::retain::<BrowserViewControllerDelegateState>(context) };
+}
+
+extern "C" fn browser_view_controller_context_release(context: *mut c_void) {
+    unsafe { crate::refcount::release::<BrowserViewControllerDelegateState>(context) };
 }
 
 /// Wraps a `MultipeerConnectivity` `MCBrowserViewController`.
@@ -222,6 +237,7 @@ impl BrowserViewController {
         let has_should_present = callbacks.should_present_peer.is_some();
         let state = Box::new(BrowserViewControllerDelegateState {
             callbacks: Mutex::new(callbacks),
+            ref_count: crate::refcount::RefCount::new(),
         });
         let ptr = NonNull::from(Box::leak(state));
         unsafe {
@@ -235,6 +251,8 @@ impl BrowserViewController {
                 } else {
                     None
                 },
+                browser_view_controller_context_retain,
+                browser_view_controller_context_release,
             );
         }
         self.delegate_state = Some(ptr);
@@ -247,7 +265,9 @@ impl BrowserViewController {
                 ffi::browser_view_controller::mpc_browser_view_controller_clear_delegate(
                     self.raw.as_ptr(),
                 );
-                drop(Box::from_raw(state.as_ptr()));
+                crate::refcount::release::<BrowserViewControllerDelegateState>(
+                    state.as_ptr().cast::<c_void>(),
+                );
             }
         }
     }

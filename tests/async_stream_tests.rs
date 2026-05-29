@@ -68,3 +68,11 @@ fn invitation_handle_decline_on_drop() {
     let handle = InvitationHandle::default();
     drop(handle);
 }
+
+#[test]
+fn async_payload_ffi_layout_matches_swift() {
+    assert!(
+        multipeerconnectivity::async_api::verify_ffi_layout(),
+        "Swift async payload layout disagrees with Rust layout (ABI mismatch)"
+    );
+}

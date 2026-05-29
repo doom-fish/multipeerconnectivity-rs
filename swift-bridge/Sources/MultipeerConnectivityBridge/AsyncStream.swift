@@ -60,11 +60,19 @@ private final class MCSessionEventBridge: NSObject, MCSessionDelegate {
     let mcSession: MCSession
     let onEvent: MpcEventCallback
     let ctx: UnsafeMutableRawPointer?
+    let retention: ContextRetention
 
-    init(session: MCSession, onEvent: MpcEventCallback, ctx: UnsafeMutableRawPointer?) {
+    init(
+        session: MCSession,
+        onEvent: MpcEventCallback,
+        ctx: UnsafeMutableRawPointer?,
+        ctxRetain: MpcContextRetainCallback,
+        ctxRelease: MpcContextRetainCallback
+    ) {
         self.mcSession = session
         self.onEvent = onEvent
         self.ctx = ctx
+        self.retention = ContextRetention(context: ctx, retain: ctxRetain, release: ctxRelease)
         super.init()
         session.delegate = self
     }
@@ -194,9 +202,17 @@ private final class MCSessionEventBridge: NSObject, MCSessionDelegate {
 public func mpc_session_stream_subscribe(
     _ sessionPtr: UnsafeMutableRawPointer,
     _ onEvent: MpcEventCallback,
-    _ ctx: UnsafeMutableRawPointer?
+    _ ctx: UnsafeMutableRawPointer?,
+    _ ctxRetain: MpcContextRetainCallback,
+    _ ctxRelease: MpcContextRetainCallback
 ) -> UnsafeMutableRawPointer {
-    let bridge = MCSessionEventBridge(session: session(sessionPtr), onEvent: onEvent, ctx: ctx)
+    let bridge = MCSessionEventBridge(
+        session: session(sessionPtr),
+        onEvent: onEvent,
+        ctx: ctx,
+        ctxRetain: ctxRetain,
+        ctxRelease: ctxRelease
+    )
     return Unmanaged.passRetained(bridge).toOpaque()
 }
 
@@ -229,11 +245,19 @@ private final class MCBrowserEventBridge: NSObject, MCNearbyServiceBrowserDelega
     let mcBrowser: MCNearbyServiceBrowser
     let onEvent: MpcEventCallback
     let ctx: UnsafeMutableRawPointer?
+    let retention: ContextRetention
 
-    init(browser: MCNearbyServiceBrowser, onEvent: MpcEventCallback, ctx: UnsafeMutableRawPointer?) {
+    init(
+        browser: MCNearbyServiceBrowser,
+        onEvent: MpcEventCallback,
+        ctx: UnsafeMutableRawPointer?,
+        ctxRetain: MpcContextRetainCallback,
+        ctxRelease: MpcContextRetainCallback
+    ) {
         self.mcBrowser = browser
         self.onEvent = onEvent
         self.ctx = ctx
+        self.retention = ContextRetention(context: ctx, retain: ctxRetain, release: ctxRelease)
         super.init()
         browser.delegate = self
     }
@@ -277,12 +301,16 @@ private final class MCBrowserEventBridge: NSObject, MCNearbyServiceBrowserDelega
 public func mpc_browser_stream_subscribe(
     _ browserPtr: UnsafeMutableRawPointer,
     _ onEvent: MpcEventCallback,
-    _ ctx: UnsafeMutableRawPointer?
+    _ ctx: UnsafeMutableRawPointer?,
+    _ ctxRetain: MpcContextRetainCallback,
+    _ ctxRelease: MpcContextRetainCallback
 ) -> UnsafeMutableRawPointer {
     let bridge = MCBrowserEventBridge(
         browser: browser(browserPtr),
         onEvent: onEvent,
-        ctx: ctx
+        ctx: ctx,
+        ctxRetain: ctxRetain,
+        ctxRelease: ctxRelease
     )
     return Unmanaged.passRetained(bridge).toOpaque()
 }
@@ -342,15 +370,19 @@ private final class MCAdvertiserEventBridge: NSObject, MCNearbyServiceAdvertiser
     let mcAdvertiser: MCNearbyServiceAdvertiser
     let onEvent: MpcEventCallback
     let ctx: UnsafeMutableRawPointer?
+    let retention: ContextRetention
 
     init(
         advertiser: MCNearbyServiceAdvertiser,
         onEvent: MpcEventCallback,
-        ctx: UnsafeMutableRawPointer?
+        ctx: UnsafeMutableRawPointer?,
+        ctxRetain: MpcContextRetainCallback,
+        ctxRelease: MpcContextRetainCallback
     ) {
         self.mcAdvertiser = advertiser
         self.onEvent = onEvent
         self.ctx = ctx
+        self.retention = ContextRetention(context: ctx, retain: ctxRetain, release: ctxRelease)
         super.init()
         advertiser.delegate = self
     }
@@ -402,12 +434,16 @@ private final class MCAdvertiserEventBridge: NSObject, MCNearbyServiceAdvertiser
 public func mpc_advertiser_stream_subscribe(
     _ advertiserPtr: UnsafeMutableRawPointer,
     _ onEvent: MpcEventCallback,
-    _ ctx: UnsafeMutableRawPointer?
+    _ ctx: UnsafeMutableRawPointer?,
+    _ ctxRetain: MpcContextRetainCallback,
+    _ ctxRelease: MpcContextRetainCallback
 ) -> UnsafeMutableRawPointer {
     let bridge = MCAdvertiserEventBridge(
         advertiser: advertiser(advertiserPtr),
         onEvent: onEvent,
-        ctx: ctx
+        ctx: ctx,
+        ctxRetain: ctxRetain,
+        ctxRelease: ctxRelease
     )
     return Unmanaged.passRetained(bridge).toOpaque()
 }
@@ -415,4 +451,38 @@ public func mpc_advertiser_stream_subscribe(
 @_cdecl("mpc_advertiser_stream_unsubscribe")
 public func mpc_advertiser_stream_unsubscribe(_ handle: UnsafeMutableRawPointer) {
     Unmanaged<MCAdvertiserEventBridge>.fromOpaque(handle).release()
+}
+
+// MARK: - FFI Layout Verification
+
+/// Cross-language ABI check called from Rust's `tests/async_stream_tests.rs`.
+///
+/// Returns `true` only if the Swift `MemoryLayout` (stride and alignment) of
+/// every packed event payload struct matches the values pinned on the Rust side
+/// via the `const _: () = assert!(...)` checks in `src/async_api.rs`. A `false`
+/// return flags a genuine Rust/Swift ABI mismatch.
+@_cdecl("mpc_async_verify_ffi_layout")
+public func mpc_async_verify_ffi_layout() -> Bool {
+    MemoryLayout<MpcSessionStatePayload>.stride == 16
+        && MemoryLayout<MpcSessionStatePayload>.alignment == 8
+        && MemoryLayout<MpcSessionDataPayload>.stride == 24
+        && MemoryLayout<MpcSessionDataPayload>.alignment == 8
+        && MemoryLayout<MpcSessionStreamPayload>.stride == 24
+        && MemoryLayout<MpcSessionStreamPayload>.alignment == 8
+        && MemoryLayout<MpcSessionResourceStartPayload>.stride == 24
+        && MemoryLayout<MpcSessionResourceStartPayload>.alignment == 8
+        && MemoryLayout<MpcSessionResourceFinishPayload>.stride == 32
+        && MemoryLayout<MpcSessionResourceFinishPayload>.alignment == 8
+        && MemoryLayout<MpcSessionCertPayload>.stride == 24
+        && MemoryLayout<MpcSessionCertPayload>.alignment == 8
+        && MemoryLayout<MpcBrowserFoundPayload>.stride == 16
+        && MemoryLayout<MpcBrowserFoundPayload>.alignment == 8
+        && MemoryLayout<MpcBrowserLostPayload>.stride == 8
+        && MemoryLayout<MpcBrowserLostPayload>.alignment == 8
+        && MemoryLayout<MpcBrowserErrorPayload>.stride == 8
+        && MemoryLayout<MpcBrowserErrorPayload>.alignment == 8
+        && MemoryLayout<MpcAdvertiserInvitationPayload>.stride == 32
+        && MemoryLayout<MpcAdvertiserInvitationPayload>.alignment == 8
+        && MemoryLayout<MpcAdvertiserErrorPayload>.stride == 8
+        && MemoryLayout<MpcAdvertiserErrorPayload>.alignment == 8
 }

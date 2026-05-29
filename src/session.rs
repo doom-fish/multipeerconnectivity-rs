@@ -230,6 +230,21 @@ impl Default for SessionDelegate {
 
 struct SessionDelegateState {
     callbacks: Mutex<SessionDelegate>,
+    ref_count: crate::refcount::RefCount,
+}
+
+impl crate::refcount::RefCounted for SessionDelegateState {
+    fn ref_count(&self) -> &crate::refcount::RefCount {
+        &self.ref_count
+    }
+}
+
+extern "C" fn session_context_retain(context: *mut c_void) {
+    unsafe { crate::refcount::retain::<SessionDelegateState>(context) };
+}
+
+extern "C" fn session_context_release(context: *mut c_void) {
+    unsafe { crate::refcount::release::<SessionDelegateState>(context) };
 }
 
 struct ResourceSendCompletionState {
@@ -541,6 +556,7 @@ impl Session {
         let has_certificate = callbacks.on_certificate.is_some();
         let state = Box::new(SessionDelegateState {
             callbacks: Mutex::new(callbacks),
+            ref_count: crate::refcount::RefCount::new(),
         });
         let ptr = NonNull::from(Box::leak(state));
         unsafe {
@@ -557,6 +573,8 @@ impl Session {
                 } else {
                     None
                 },
+                session_context_retain,
+                session_context_release,
             );
         }
         self.delegate_state = Some(ptr);
@@ -567,7 +585,7 @@ impl Session {
         if let Some(state) = self.delegate_state.take() {
             unsafe {
                 ffi::session::mpc_session_clear_delegate(self.raw.as_ptr());
-                drop(Box::from_raw(state.as_ptr()));
+                crate::refcount::release::<SessionDelegateState>(state.as_ptr().cast::<c_void>());
             }
         }
     }

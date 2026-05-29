@@ -18,6 +18,8 @@ extern "C" {
         context: *mut c_void,
         on_will_present: Option<AdvertiserAssistantCallback>,
         on_did_dismiss: Option<AdvertiserAssistantCallback>,
+        context_retain: crate::ffi::core::ContextRetainCallback,
+        context_release: crate::ffi::core::ContextRetainCallback,
     );
     pub fn mpc_advertiser_assistant_clear_delegate(assistant: *mut c_void);
 }
