@@ -236,7 +236,10 @@ impl NearbyServiceBrowser {
     pub fn clear_delegate(&mut self) {
         if let Some(state) = self.delegate_state.take() {
             unsafe {
-                ffi::browser::mpc_browser_clear_delegate(self.raw.as_ptr());
+                ffi::browser::mpc_browser_clear_delegate(
+                    self.raw.as_ptr(),
+                    state.as_ptr().cast::<c_void>(),
+                );
                 crate::refcount::release::<BrowserDelegateState>(state.as_ptr().cast::<c_void>());
             }
         }

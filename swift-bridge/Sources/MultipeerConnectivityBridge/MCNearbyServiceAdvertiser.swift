@@ -64,7 +64,7 @@ public typealias MpcAdvertiserErrorCallback = @convention(c) (
     UnsafeMutableRawPointer?
 ) -> Void
 
-private final class AdvertiserDelegateBox: NSObject, MCNearbyServiceAdvertiserDelegate {
+private final class AdvertiserDelegateBox: NSObject, MCNearbyServiceAdvertiserDelegate, MpcDelegateIdentity {
     let context: UnsafeMutableRawPointer?
     let retention: ContextRetention
     let invitationCallback: MpcAdvertiserInvitationCallback?
@@ -107,6 +107,10 @@ private final class AdvertiserDelegateBox: NSObject, MCNearbyServiceAdvertiserDe
         mpc_object_release(sessionPtr)
     }
 
+    var delegateIdentity: UnsafeMutableRawPointer? {
+        context
+    }
+
     func advertiser(_ advertiser: MCNearbyServiceAdvertiser, didNotStartAdvertisingPeer error: any Error) {
         errorCallback?(context, retainedNSError(error))
     }
@@ -121,6 +125,12 @@ private final class AdvertiserDelegateBox: NSObject, MCNearbyServiceAdvertiserDe
 
 private var advertiserDelegates: [ObjectIdentifier: AdvertiserDelegateBox] = [:]
 private let advertiserDelegatesLock = NSLock()
+
+func registeredAdvertiserDelegate(for value: MCNearbyServiceAdvertiser) -> (any MCNearbyServiceAdvertiserDelegate)? {
+    advertiserDelegatesLock.lock()
+    defer { advertiserDelegatesLock.unlock() }
+    return advertiserDelegates[ObjectIdentifier(value)]
+}
 
 @_cdecl("mpc_advertiser_set_delegate")
 public func mpc_advertiser_set_delegate(
@@ -146,10 +156,18 @@ public func mpc_advertiser_set_delegate(
 }
 
 @_cdecl("mpc_advertiser_clear_delegate")
-public func mpc_advertiser_clear_delegate(_ advertiserPtr: UnsafeMutableRawPointer) {
+public func mpc_advertiser_clear_delegate(
+    _ advertiserPtr: UnsafeMutableRawPointer,
+    _ context: UnsafeMutableRawPointer?
+) {
     let value = advertiser(advertiserPtr)
-    value.delegate = nil
+    let key = ObjectIdentifier(value)
     advertiserDelegatesLock.lock()
-    advertiserDelegates.removeValue(forKey: ObjectIdentifier(value))
+    let removed = advertiserDelegates[key]?.context == context
+        ? advertiserDelegates.removeValue(forKey: key)
+        : nil
     advertiserDelegatesLock.unlock()
+    if let removed, value.delegate === removed {
+        value.delegate = nil
+    }
 }

@@ -168,12 +168,20 @@ public func mpc_browser_view_controller_set_delegate(
 }
 
 @_cdecl("mpc_browser_view_controller_clear_delegate")
-public func mpc_browser_view_controller_clear_delegate(_ controllerPtr: UnsafeMutableRawPointer) {
+public func mpc_browser_view_controller_clear_delegate(
+    _ controllerPtr: UnsafeMutableRawPointer,
+    _ context: UnsafeMutableRawPointer?
+) {
     onMain {
         let value = browserViewController(controllerPtr)
-        value.delegate = nil
+        let key = ObjectIdentifier(value)
         browserViewControllerDelegatesLock.lock()
-        browserViewControllerDelegates.removeValue(forKey: ObjectIdentifier(value))
+        let removed = browserViewControllerDelegates[key]?.context == context
+            ? browserViewControllerDelegates.removeValue(forKey: key)
+            : nil
         browserViewControllerDelegatesLock.unlock()
+        if let removed, value.delegate === removed {
+            value.delegate = nil
+        }
     }
 }

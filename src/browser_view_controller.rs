@@ -264,6 +264,7 @@ impl BrowserViewController {
             unsafe {
                 ffi::browser_view_controller::mpc_browser_view_controller_clear_delegate(
                     self.raw.as_ptr(),
+                    state.as_ptr().cast::<c_void>(),
                 );
                 crate::refcount::release::<BrowserViewControllerDelegateState>(
                     state.as_ptr().cast::<c_void>(),

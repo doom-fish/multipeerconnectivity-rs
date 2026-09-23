@@ -587,7 +587,10 @@ impl Session {
     pub fn clear_delegate(&mut self) {
         if let Some(state) = self.delegate_state.take() {
             unsafe {
-                ffi::session::mpc_session_clear_delegate(self.raw.as_ptr());
+                ffi::session::mpc_session_clear_delegate(
+                    self.raw.as_ptr(),
+                    state.as_ptr().cast::<c_void>(),
+                );
                 crate::refcount::release::<SessionDelegateState>(state.as_ptr().cast::<c_void>());
             }
         }

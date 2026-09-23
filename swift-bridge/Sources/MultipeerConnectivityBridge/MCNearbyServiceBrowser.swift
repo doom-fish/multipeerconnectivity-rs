@@ -68,7 +68,7 @@ public typealias MpcBrowserErrorCallback = @convention(c) (
     UnsafeMutableRawPointer?
 ) -> Void
 
-private final class BrowserDelegateBox: NSObject, MCNearbyServiceBrowserDelegate {
+private final class BrowserDelegateBox: NSObject, MCNearbyServiceBrowserDelegate, MpcDelegateIdentity {
     let context: UnsafeMutableRawPointer?
     let retention: ContextRetention
     let foundCallback: MpcBrowserFoundCallback?
@@ -103,6 +103,10 @@ private final class BrowserDelegateBox: NSObject, MCNearbyServiceBrowserDelegate
         }
     }
 
+    var delegateIdentity: UnsafeMutableRawPointer? {
+        context
+    }
+
     func browser(_ browser: MCNearbyServiceBrowser, lostPeer peerID: MCPeerID) {
         lostCallback?(context, retainObject(peerID))
     }
@@ -121,6 +125,12 @@ private final class BrowserDelegateBox: NSObject, MCNearbyServiceBrowserDelegate
 
 private var browserDelegates: [ObjectIdentifier: BrowserDelegateBox] = [:]
 private let browserDelegatesLock = NSLock()
+
+func registeredBrowserDelegate(for value: MCNearbyServiceBrowser) -> (any MCNearbyServiceBrowserDelegate)? {
+    browserDelegatesLock.lock()
+    defer { browserDelegatesLock.unlock() }
+    return browserDelegates[ObjectIdentifier(value)]
+}
 
 @_cdecl("mpc_browser_set_delegate")
 public func mpc_browser_set_delegate(
@@ -148,10 +158,16 @@ public func mpc_browser_set_delegate(
 }
 
 @_cdecl("mpc_browser_clear_delegate")
-public func mpc_browser_clear_delegate(_ browserPtr: UnsafeMutableRawPointer) {
+public func mpc_browser_clear_delegate(
+    _ browserPtr: UnsafeMutableRawPointer,
+    _ context: UnsafeMutableRawPointer?
+) {
     let value = browser(browserPtr)
-    value.delegate = nil
+    let key = ObjectIdentifier(value)
     browserDelegatesLock.lock()
-    browserDelegates.removeValue(forKey: ObjectIdentifier(value))
+    let removed = browserDelegates[key]?.context == context ? browserDelegates.removeValue(forKey: key) : nil
     browserDelegatesLock.unlock()
+    if let removed, value.delegate === removed {
+        value.delegate = nil
+    }
 }

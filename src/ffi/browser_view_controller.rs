@@ -34,5 +34,8 @@ extern "C" {
         context_retain: crate::ffi::core::ContextRetainCallback,
         context_release: crate::ffi::core::ContextRetainCallback,
     );
-    pub fn mpc_browser_view_controller_clear_delegate(controller: *mut c_void);
+    pub fn mpc_browser_view_controller_clear_delegate(
+        controller: *mut c_void,
+        context: *mut c_void,
+    );
 }

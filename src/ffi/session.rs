@@ -113,5 +113,5 @@ extern "C" {
         context_retain: crate::ffi::core::ContextRetainCallback,
         context_release: crate::ffi::core::ContextRetainCallback,
     );
-    pub fn mpc_session_clear_delegate(session: *mut c_void);
+    pub fn mpc_session_clear_delegate(session: *mut c_void, context: *mut c_void);
 }

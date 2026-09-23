@@ -48,6 +48,26 @@ final class ContextRetention {
     }
 }
 
+protocol MpcDelegateIdentity: AnyObject {
+    var delegateIdentity: UnsafeMutableRawPointer? { get }
+}
+
+@_cdecl("mpc_delegate_identity")
+public func mpc_delegate_identity(_ objectPtr: UnsafeMutableRawPointer) -> UnsafeMutableRawPointer? {
+    let delegate: AnyObject?
+    switch Unmanaged<ObjectBox>.fromOpaque(objectPtr).takeUnretainedValue().value {
+    case let value as MCSession:
+        delegate = value.delegate
+    case let value as MCNearbyServiceBrowser:
+        delegate = value.delegate
+    case let value as MCNearbyServiceAdvertiser:
+        delegate = value.delegate
+    default:
+        delegate = nil
+    }
+    return (delegate as? MpcDelegateIdentity)?.delegateIdentity
+}
+
 func ffiString(_ string: String?) -> UnsafeMutablePointer<CChar>? {
     guard let string else { return nil }
     return string.withCString { strdup($0) }

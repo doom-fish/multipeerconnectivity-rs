@@ -10,6 +10,8 @@ public typealias MpcEventCallback = @convention(c) (
     UnsafeMutableRawPointer?
 ) -> Void
 
+private let bridgeDelegateLock = NSLock()
+
 // MARK: - MCSession async event bridge
 
 // Event kind constants for MCSessionDelegate:
@@ -76,11 +78,13 @@ public func mpc_certificate_handle_respond(_ handlePtr: UnsafeMutableRawPointer,
     box.invoke(accept)
 }
 
-private final class MCSessionEventBridge: NSObject, MCSessionDelegate {
+private final class MCSessionEventBridge: NSObject, MCSessionDelegate, MpcDelegateIdentity {
     let mcSession: MCSession
     let onEvent: MpcEventCallback
     let ctx: UnsafeMutableRawPointer?
     let retention: ContextRetention
+    private weak var previous: (any MCSessionDelegate)?
+    private(set) var isDetached = false
 
     init(
         session: MCSession,
@@ -94,11 +98,26 @@ private final class MCSessionEventBridge: NSObject, MCSessionDelegate {
         self.ctx = ctx
         self.retention = ContextRetention(context: ctx, retain: ctxRetain, release: ctxRelease)
         super.init()
+        bridgeDelegateLock.lock()
+        previous = session.delegate
         session.delegate = self
+        bridgeDelegateLock.unlock()
     }
 
-    deinit {
-        mcSession.delegate = nil
+    var delegateIdentity: UnsafeMutableRawPointer? {
+        Unmanaged.passUnretained(self).toOpaque()
+    }
+
+    func detach() {
+        bridgeDelegateLock.lock()
+        defer { bridgeDelegateLock.unlock() }
+        isDetached = true
+        guard mcSession.delegate === self else { return }
+        if let previous = previous as? MCSessionEventBridge, !previous.isDetached {
+            mcSession.delegate = previous
+        } else {
+            mcSession.delegate = registeredSessionDelegate(for: mcSession)
+        }
     }
 
     func session(_ session: MCSession, peer peerID: MCPeerID, didChange state: MCSessionState) {
@@ -238,7 +257,7 @@ public func mpc_session_stream_subscribe(
 
 @_cdecl("mpc_session_stream_unsubscribe")
 public func mpc_session_stream_unsubscribe(_ handle: UnsafeMutableRawPointer) {
-    Unmanaged<MCSessionEventBridge>.fromOpaque(handle).release()
+    Unmanaged<MCSessionEventBridge>.fromOpaque(handle).takeRetainedValue().detach()
 }
 
 public typealias MpcCertificateDecisionCallback = @convention(c) (UnsafeMutableRawPointer?, Bool) -> Void
@@ -282,11 +301,13 @@ private struct MpcBrowserErrorPayload {
     var errorPtr: UnsafeMutableRawPointer?
 }
 
-private final class MCBrowserEventBridge: NSObject, MCNearbyServiceBrowserDelegate {
+private final class MCBrowserEventBridge: NSObject, MCNearbyServiceBrowserDelegate, MpcDelegateIdentity {
     let mcBrowser: MCNearbyServiceBrowser
     let onEvent: MpcEventCallback
     let ctx: UnsafeMutableRawPointer?
     let retention: ContextRetention
+    private weak var previous: (any MCNearbyServiceBrowserDelegate)?
+    private(set) var isDetached = false
 
     init(
         browser: MCNearbyServiceBrowser,
@@ -300,11 +321,26 @@ private final class MCBrowserEventBridge: NSObject, MCNearbyServiceBrowserDelega
         self.ctx = ctx
         self.retention = ContextRetention(context: ctx, retain: ctxRetain, release: ctxRelease)
         super.init()
+        bridgeDelegateLock.lock()
+        previous = browser.delegate
         browser.delegate = self
+        bridgeDelegateLock.unlock()
     }
 
-    deinit {
-        mcBrowser.delegate = nil
+    var delegateIdentity: UnsafeMutableRawPointer? {
+        Unmanaged.passUnretained(self).toOpaque()
+    }
+
+    func detach() {
+        bridgeDelegateLock.lock()
+        defer { bridgeDelegateLock.unlock() }
+        isDetached = true
+        guard mcBrowser.delegate === self else { return }
+        if let previous = previous as? MCBrowserEventBridge, !previous.isDetached {
+            mcBrowser.delegate = previous
+        } else {
+            mcBrowser.delegate = registeredBrowserDelegate(for: mcBrowser)
+        }
     }
 
     func browser(
@@ -358,7 +394,7 @@ public func mpc_browser_stream_subscribe(
 
 @_cdecl("mpc_browser_stream_unsubscribe")
 public func mpc_browser_stream_unsubscribe(_ handle: UnsafeMutableRawPointer) {
-    Unmanaged<MCBrowserEventBridge>.fromOpaque(handle).release()
+    Unmanaged<MCBrowserEventBridge>.fromOpaque(handle).takeRetainedValue().detach()
 }
 
 // MARK: - MCNearbyServiceAdvertiser async event bridge
@@ -407,11 +443,13 @@ public func mpc_invitation_handle_decline(_ handlePtr: UnsafeMutableRawPointer) 
     box.invoke(false, mcSession: nil)
 }
 
-private final class MCAdvertiserEventBridge: NSObject, MCNearbyServiceAdvertiserDelegate {
+private final class MCAdvertiserEventBridge: NSObject, MCNearbyServiceAdvertiserDelegate, MpcDelegateIdentity {
     let mcAdvertiser: MCNearbyServiceAdvertiser
     let onEvent: MpcEventCallback
     let ctx: UnsafeMutableRawPointer?
     let retention: ContextRetention
+    private weak var previous: (any MCNearbyServiceAdvertiserDelegate)?
+    private(set) var isDetached = false
 
     init(
         advertiser: MCNearbyServiceAdvertiser,
@@ -425,11 +463,26 @@ private final class MCAdvertiserEventBridge: NSObject, MCNearbyServiceAdvertiser
         self.ctx = ctx
         self.retention = ContextRetention(context: ctx, retain: ctxRetain, release: ctxRelease)
         super.init()
+        bridgeDelegateLock.lock()
+        previous = advertiser.delegate
         advertiser.delegate = self
+        bridgeDelegateLock.unlock()
     }
 
-    deinit {
-        mcAdvertiser.delegate = nil
+    var delegateIdentity: UnsafeMutableRawPointer? {
+        Unmanaged.passUnretained(self).toOpaque()
+    }
+
+    func detach() {
+        bridgeDelegateLock.lock()
+        defer { bridgeDelegateLock.unlock() }
+        isDetached = true
+        guard mcAdvertiser.delegate === self else { return }
+        if let previous = previous as? MCAdvertiserEventBridge, !previous.isDetached {
+            mcAdvertiser.delegate = previous
+        } else {
+            mcAdvertiser.delegate = registeredAdvertiserDelegate(for: mcAdvertiser)
+        }
     }
 
     func advertiser(
@@ -491,7 +544,7 @@ public func mpc_advertiser_stream_subscribe(
 
 @_cdecl("mpc_advertiser_stream_unsubscribe")
 public func mpc_advertiser_stream_unsubscribe(_ handle: UnsafeMutableRawPointer) {
-    Unmanaged<MCAdvertiserEventBridge>.fromOpaque(handle).release()
+    Unmanaged<MCAdvertiserEventBridge>.fromOpaque(handle).takeRetainedValue().detach()
 }
 
 // MARK: - FFI Layout Verification

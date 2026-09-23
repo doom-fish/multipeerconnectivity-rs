@@ -921,9 +921,14 @@ mod tests {
     use core::ffi::c_void;
     use std::sync::atomic::{AtomicI32, Ordering};
 
-    use super::{CertificateHandle, SessionEvent, SessionEventStream};
+    use super::{
+        AdvertiserEventStream, BrowserEventStream, CertificateHandle, SessionEvent,
+        SessionEventStream,
+    };
+    use crate::advertiser::{NearbyServiceAdvertiser, NearbyServiceAdvertiserDelegate};
+    use crate::browser::{NearbyServiceBrowser, NearbyServiceBrowserDelegate};
     use crate::peer::PeerId;
-    use crate::session::{EncryptionPreference, Session};
+    use crate::session::{EncryptionPreference, Session, SessionDelegate};
 
     extern "C" {
         fn mpc_session_stream_deliver_certificate(
@@ -933,6 +938,26 @@ mod tests {
             decision: unsafe extern "C" fn(*mut c_void, bool),
             decision_context: *mut c_void,
         );
+        fn mpc_delegate_identity(object: *mut c_void) -> *mut c_void;
+    }
+
+    fn delegate_of(object: *mut c_void) -> *mut c_void {
+        unsafe { mpc_delegate_identity(object) }
+    }
+
+    #[allow(clippy::used_underscore_binding)]
+    fn session_bridge(stream: &SessionEventStream) -> *mut c_void {
+        stream._handle.bridge_handle
+    }
+
+    #[allow(clippy::used_underscore_binding)]
+    fn browser_bridge(stream: &BrowserEventStream) -> *mut c_void {
+        stream._handle.bridge_handle
+    }
+
+    #[allow(clippy::used_underscore_binding)]
+    fn advertiser_bridge(stream: &AdvertiserEventStream) -> *mut c_void {
+        stream._handle.bridge_handle
     }
 
     const PENDING: i32 = -1;
@@ -944,7 +969,6 @@ mod tests {
         decision.store(i32::from(accepted), Ordering::SeqCst);
     }
 
-    #[allow(clippy::used_underscore_binding)]
     fn deliver(
         stream: &SessionEventStream,
         peer: &PeerId,
@@ -953,7 +977,7 @@ mod tests {
     ) {
         unsafe {
             mpc_session_stream_deliver_certificate(
-                stream._handle.bridge_handle,
+                session_bridge(stream),
                 peer.as_ptr(),
                 include_item,
                 record_decision,
@@ -1070,5 +1094,133 @@ mod tests {
         handle.accept();
         CertificateHandle::default().reject();
         drop(CertificateHandle::default());
+    }
+
+    #[test]
+    fn dropping_a_session_stream_restores_the_registered_delegate() {
+        let mut session = session("delegate-restore");
+        assert!(delegate_of(session.as_ptr()).is_null());
+        session.set_callbacks(SessionDelegate::new());
+        let sync_delegate = delegate_of(session.as_ptr());
+        assert!(!sync_delegate.is_null());
+
+        let stream = SessionEventStream::subscribe_default(&session);
+        assert_eq!(delegate_of(session.as_ptr()), session_bridge(&stream));
+        drop(stream);
+        assert_eq!(delegate_of(session.as_ptr()), sync_delegate);
+
+        session.clear_delegate();
+        assert!(delegate_of(session.as_ptr()).is_null());
+    }
+
+    #[test]
+    fn dropping_a_session_stream_keeps_a_delegate_installed_later() {
+        let mut session = session("delegate-later");
+        let stream = SessionEventStream::subscribe_default(&session);
+        session.set_callbacks(SessionDelegate::new());
+        let sync_delegate = delegate_of(session.as_ptr());
+        assert!(!sync_delegate.is_null());
+        assert_ne!(sync_delegate, session_bridge(&stream));
+
+        drop(stream);
+        assert_eq!(delegate_of(session.as_ptr()), sync_delegate);
+    }
+
+    #[test]
+    fn clearing_the_session_delegate_keeps_a_stream_installed_later() {
+        let mut session = session("delegate-clear");
+        session.set_callbacks(SessionDelegate::new());
+        let stream = SessionEventStream::subscribe_default(&session);
+
+        session.clear_delegate();
+        assert_eq!(delegate_of(session.as_ptr()), session_bridge(&stream));
+
+        drop(stream);
+        assert!(delegate_of(session.as_ptr()).is_null());
+    }
+
+    #[test]
+    fn nested_session_streams_unwind_in_either_order() {
+        let session = session("delegate-nested");
+
+        let outer = SessionEventStream::subscribe_default(&session);
+        let inner = SessionEventStream::subscribe_default(&session);
+        let outer_bridge = session_bridge(&outer);
+        assert_eq!(delegate_of(session.as_ptr()), session_bridge(&inner));
+        drop(inner);
+        assert_eq!(delegate_of(session.as_ptr()), outer_bridge);
+        drop(outer);
+        assert!(delegate_of(session.as_ptr()).is_null());
+
+        let outer = SessionEventStream::subscribe_default(&session);
+        let inner = SessionEventStream::subscribe_default(&session);
+        let inner_bridge = session_bridge(&inner);
+        drop(outer);
+        assert_eq!(delegate_of(session.as_ptr()), inner_bridge);
+        drop(inner);
+        assert!(delegate_of(session.as_ptr()).is_null());
+    }
+
+    #[test]
+    fn dropping_a_clone_keeps_the_delegate_another_clone_installed() {
+        let mut original = session("delegate-clone");
+        original.set_callbacks(SessionDelegate::new());
+        let mut clone = original.clone();
+        clone.set_callbacks(SessionDelegate::new());
+        let clone_delegate = delegate_of(clone.as_ptr());
+        assert!(!clone_delegate.is_null());
+
+        drop(original);
+        assert_eq!(delegate_of(clone.as_ptr()), clone_delegate);
+
+        clone.clear_delegate();
+        assert!(delegate_of(clone.as_ptr()).is_null());
+    }
+
+    #[test]
+    fn browser_streams_restore_and_keep_later_delegates() {
+        let peer = PeerId::new("delegate-browser").expect("peer");
+        let mut browser = NearbyServiceBrowser::new(&peer, "doom-test").expect("browser");
+        browser.set_callbacks(NearbyServiceBrowserDelegate::new());
+        let sync_delegate = delegate_of(browser.as_ptr());
+        assert!(!sync_delegate.is_null());
+
+        let stream = BrowserEventStream::subscribe_default(&browser);
+        assert_eq!(delegate_of(browser.as_ptr()), browser_bridge(&stream));
+        drop(stream);
+        assert_eq!(delegate_of(browser.as_ptr()), sync_delegate);
+
+        let stream = BrowserEventStream::subscribe_default(&browser);
+        browser.clear_delegate();
+        assert_eq!(delegate_of(browser.as_ptr()), browser_bridge(&stream));
+        browser.set_callbacks(NearbyServiceBrowserDelegate::new());
+        let later_delegate = delegate_of(browser.as_ptr());
+        assert_ne!(later_delegate, browser_bridge(&stream));
+        drop(stream);
+        assert_eq!(delegate_of(browser.as_ptr()), later_delegate);
+    }
+
+    #[test]
+    fn advertiser_streams_restore_and_keep_later_delegates() {
+        let peer = PeerId::new("delegate-advertiser").expect("peer");
+        let mut advertiser =
+            NearbyServiceAdvertiser::new(&peer, None, "doom-test").expect("advertiser");
+        advertiser.set_callbacks(NearbyServiceAdvertiserDelegate::new());
+        let sync_delegate = delegate_of(advertiser.as_ptr());
+        assert!(!sync_delegate.is_null());
+
+        let stream = AdvertiserEventStream::subscribe_default(&advertiser);
+        assert_eq!(delegate_of(advertiser.as_ptr()), advertiser_bridge(&stream));
+        drop(stream);
+        assert_eq!(delegate_of(advertiser.as_ptr()), sync_delegate);
+
+        let stream = AdvertiserEventStream::subscribe_default(&advertiser);
+        advertiser.clear_delegate();
+        assert_eq!(delegate_of(advertiser.as_ptr()), advertiser_bridge(&stream));
+        advertiser.set_callbacks(NearbyServiceAdvertiserDelegate::new());
+        let later_delegate = delegate_of(advertiser.as_ptr());
+        assert_ne!(later_delegate, advertiser_bridge(&stream));
+        drop(stream);
+        assert_eq!(delegate_of(advertiser.as_ptr()), later_delegate);
     }
 }

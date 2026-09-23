@@ -274,7 +274,10 @@ impl NearbyServiceAdvertiser {
     pub fn clear_delegate(&mut self) {
         if let Some(state) = self.delegate_state.take() {
             unsafe {
-                ffi::advertiser::mpc_advertiser_clear_delegate(self.raw.as_ptr());
+                ffi::advertiser::mpc_advertiser_clear_delegate(
+                    self.raw.as_ptr(),
+                    state.as_ptr().cast::<c_void>(),
+                );
                 crate::refcount::release::<AdvertiserDelegateState>(
                     state.as_ptr().cast::<c_void>(),
                 );

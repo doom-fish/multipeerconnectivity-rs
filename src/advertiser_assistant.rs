@@ -234,6 +234,7 @@ impl AdvertiserAssistant {
             unsafe {
                 ffi::advertiser_assistant::mpc_advertiser_assistant_clear_delegate(
                     self.raw.as_ptr(),
+                    state.as_ptr().cast::<c_void>(),
                 );
                 crate::refcount::release::<AdvertiserAssistantDelegateState>(
                     state.as_ptr().cast::<c_void>(),

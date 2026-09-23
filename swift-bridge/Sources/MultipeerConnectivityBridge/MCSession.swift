@@ -408,7 +408,7 @@ public typealias MpcSessionCertificateCallback = @convention(c) (
     Int
 ) -> Bool
 
-private final class SessionDelegateBox: NSObject, MCSessionDelegate {
+private final class SessionDelegateBox: NSObject, MCSessionDelegate, MpcDelegateIdentity {
     let context: UnsafeMutableRawPointer?
     let retention: ContextRetention
     let stateCallback: MpcSessionStateCallback?
@@ -437,6 +437,10 @@ private final class SessionDelegateBox: NSObject, MCSessionDelegate {
         self.resourceStartCallback = resourceStartCallback
         self.resourceFinishCallback = resourceFinishCallback
         self.certificateCallback = certificateCallback
+    }
+
+    var delegateIdentity: UnsafeMutableRawPointer? {
+        context
     }
 
     func session(_ session: MCSession, peer peerID: MCPeerID, didChange state: MCSessionState) {
@@ -530,6 +534,12 @@ private final class SessionDelegateBox: NSObject, MCSessionDelegate {
 private var sessionDelegates: [ObjectIdentifier: SessionDelegateBox] = [:]
 private let sessionDelegatesLock = NSLock()
 
+func registeredSessionDelegate(for value: MCSession) -> (any MCSessionDelegate)? {
+    sessionDelegatesLock.lock()
+    defer { sessionDelegatesLock.unlock() }
+    return sessionDelegates[ObjectIdentifier(value)]
+}
+
 @_cdecl("mpc_session_set_delegate")
 public func mpc_session_set_delegate(
     _ sessionPtr: UnsafeMutableRawPointer,
@@ -562,10 +572,16 @@ public func mpc_session_set_delegate(
 }
 
 @_cdecl("mpc_session_clear_delegate")
-public func mpc_session_clear_delegate(_ sessionPtr: UnsafeMutableRawPointer) {
+public func mpc_session_clear_delegate(
+    _ sessionPtr: UnsafeMutableRawPointer,
+    _ context: UnsafeMutableRawPointer?
+) {
     let value = session(sessionPtr)
-    value.delegate = nil
+    let key = ObjectIdentifier(value)
     sessionDelegatesLock.lock()
-    sessionDelegates.removeValue(forKey: ObjectIdentifier(value))
+    let removed = sessionDelegates[key]?.context == context ? sessionDelegates.removeValue(forKey: key) : nil
     sessionDelegatesLock.unlock()
+    if let removed, value.delegate === removed {
+        value.delegate = nil
+    }
 }

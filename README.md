@@ -52,6 +52,8 @@ assert!(!stream.is_closed());
 
 The feature adds `SessionEventStream`, `BrowserEventStream`, and `AdvertiserEventStream`. Each stream unsubscribes automatically when dropped.
 
+Each object has a single delegate, so subscribing a stream takes over from the current one. Dropping the stream hands the delegate back to the one it replaced (a `set_callbacks` delegate or an older stream) if that one is still active, and it never detaches a delegate that was installed after the stream. Likewise `clear_delegate` only removes the delegate that its own handle installed.
+
 `SessionEventStream` never accepts a peer on its own. Each `SessionEvent::CertificateReceived` carries a `CertificateHandle`, and the peer can connect only after you call `accept()` on it. Calling `reject()`, dropping the handle, or dropping the event unread (including when the stream is dropped or its buffer overflows) refuses the peer. The framework does not validate certificates, so check them before accepting. Peers without a security identity arrive with no certificate items and still need an explicit `accept()`.
 
 Async examples:

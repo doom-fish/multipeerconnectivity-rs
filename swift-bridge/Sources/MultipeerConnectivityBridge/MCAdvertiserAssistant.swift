@@ -132,12 +132,20 @@ public func mpc_advertiser_assistant_set_delegate(
 }
 
 @_cdecl("mpc_advertiser_assistant_clear_delegate")
-public func mpc_advertiser_assistant_clear_delegate(_ assistantPtr: UnsafeMutableRawPointer) {
+public func mpc_advertiser_assistant_clear_delegate(
+    _ assistantPtr: UnsafeMutableRawPointer,
+    _ context: UnsafeMutableRawPointer?
+) {
     onMain {
         let value = advertiserAssistant(assistantPtr)
-        value.delegate = nil
+        let key = ObjectIdentifier(value)
         advertiserAssistantDelegatesLock.lock()
-        advertiserAssistantDelegates.removeValue(forKey: ObjectIdentifier(value))
+        let removed = advertiserAssistantDelegates[key]?.context == context
+            ? advertiserAssistantDelegates.removeValue(forKey: key)
+            : nil
         advertiserAssistantDelegatesLock.unlock()
+        if let removed, value.delegate === removed {
+            value.delegate = nil
+        }
     }
 }
