@@ -9,7 +9,7 @@ description = "Safe Rust bindings for Apple's MultipeerConnectivity framework â€
 authors = ["Per Johansson <per@doom.fish>"]
 keywords = ["multipeer", "bonjour", "p2p", "networking", "macos"]
 categories = ["api-bindings", "os::macos-apis", "network-programming"]
-rust-version = "1.76"
+rust-version = "1.82"
 readme = "README.md"
 build = "build.rs"
 include = [
@@ -42,7 +42,7 @@ default = []
 async = []
 
 [dependencies]
-doom-fish-utils = { path = "../doom-fish-utils", version = ">=0.1, <0.4" }
+doom-fish-utils = { path = "../doom-fish-utils", version = ">=0.4.1, <0.5" }
 serde_json = "1"
 
 [dev-dependencies]
