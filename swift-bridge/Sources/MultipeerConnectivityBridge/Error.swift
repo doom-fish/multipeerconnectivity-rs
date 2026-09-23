@@ -45,7 +45,7 @@ func writeNSError(
         BridgeErrorBox(
             kind: kind,
             domain: nsError.domain,
-            code: Int32(nsError.code),
+            code: Int32(clamping: nsError.code),
             message: nsError.localizedDescription
         )
     )
@@ -62,7 +62,7 @@ func retainedNSError(_ error: Error?) -> UnsafeMutableRawPointer? {
         BridgeErrorBox(
             kind: nsError.domain == MCErrorDomain ? MPC_ERROR_KIND_FRAMEWORK : MPC_ERROR_KIND_OPERATION_FAILED,
             domain: nsError.domain,
-            code: Int32(nsError.code),
+            code: Int32(clamping: nsError.code),
             message: nsError.localizedDescription
         )
     ).toOpaque()

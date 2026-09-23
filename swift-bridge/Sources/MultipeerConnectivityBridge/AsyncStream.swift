@@ -123,7 +123,7 @@ private final class MCSessionEventBridge: NSObject, MCSessionDelegate, MpcDelega
     func session(_ session: MCSession, peer peerID: MCPeerID, didChange state: MCSessionState) {
         var payload = MpcSessionStatePayload(
             peerPtr: retainObject(peerID),
-            state: Int32(state.rawValue)
+            state: Int32(clamping: state.rawValue)
         )
         withUnsafeBytes(of: &payload) { bytes in
             onEvent(0, bytes.baseAddress, ctx)

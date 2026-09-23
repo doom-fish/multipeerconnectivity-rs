@@ -99,7 +99,7 @@ public func mpc_session_copy_security_identity(
 
 @_cdecl("mpc_session_encryption_preference")
 public func mpc_session_encryption_preference(_ sessionPtr: UnsafeMutableRawPointer) -> Int32 {
-    Int32(session(sessionPtr).encryptionPreference.rawValue)
+    Int32(clamping: session(sessionPtr).encryptionPreference.rawValue)
 }
 
 @_cdecl("mpc_session_copy_connected_peers")
@@ -358,12 +358,12 @@ public func mpc_session_cancel_connect_peer(
 
 @_cdecl("mpc_session_minimum_number_of_peers")
 public func mpc_session_minimum_number_of_peers() -> Int {
-    Int(kMCSessionMinimumNumberOfPeers)
+    Int(clamping: kMCSessionMinimumNumberOfPeers)
 }
 
 @_cdecl("mpc_session_maximum_number_of_peers")
 public func mpc_session_maximum_number_of_peers() -> Int {
-    Int(kMCSessionMaximumNumberOfPeers)
+    Int(clamping: kMCSessionMaximumNumberOfPeers)
 }
 
 public typealias MpcSessionStateCallback = @convention(c) (
@@ -444,7 +444,7 @@ private final class SessionDelegateBox: NSObject, MCSessionDelegate, MpcDelegate
     }
 
     func session(_ session: MCSession, peer peerID: MCPeerID, didChange state: MCSessionState) {
-        stateCallback?(context, retainObject(peerID), Int32(state.rawValue))
+        stateCallback?(context, retainObject(peerID), Int32(clamping: state.rawValue))
     }
 
     func session(_ session: MCSession, didReceive data: Data, fromPeer peerID: MCPeerID) {
