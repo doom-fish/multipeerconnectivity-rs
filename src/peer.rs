@@ -34,7 +34,7 @@ impl PeerId {
             MultipeerError::InvalidArgument("display name must not contain NUL bytes".into())
         })?;
         let mut error = ptr::null_mut();
-        let raw = unsafe { ffi::peer::mpc_peer_id_create(c_name.as_ptr(), &mut error) };
+        let raw = unsafe { ffi::peer::mpc_peer_id_create(c_name.as_ptr(), &raw mut error) };
         NonNull::new(raw).map_or_else(|| Err(take_error(error)), |raw| Ok(Self { raw }))
     }
 
@@ -55,7 +55,12 @@ impl PeerId {
         let mut length = 0usize;
         let mut error = ptr::null_mut();
         let status = unsafe {
-            ffi::peer::mpc_peer_id_archive(self.raw.as_ptr(), &mut bytes, &mut length, &mut error)
+            ffi::peer::mpc_peer_id_archive(
+                self.raw.as_ptr(),
+                &raw mut bytes,
+                &raw mut length,
+                &raw mut error,
+            )
         };
         if status != ffi::core::MPC_OK {
             return Err(take_error(error));
@@ -79,7 +84,7 @@ impl PeerId {
             ffi::peer::mpc_peer_id_from_archived_data(
                 bytes.as_ptr().cast::<c_void>(),
                 bytes.len(),
-                &mut error,
+                &raw mut error,
             )
         };
         NonNull::new(raw).map_or_else(|| Err(take_error(error)), |raw| Ok(Self { raw }))

@@ -284,7 +284,7 @@ impl Session {
                 },
                 handles.len(),
                 encryption_preference.as_raw(),
-                &mut error,
+                &raw mut error,
             )
         };
         let raw = NonNull::new(raw).ok_or_else(|| take_error(error))?;
@@ -308,7 +308,7 @@ impl Session {
             identity_ptr,
             identity_len,
             encryption_preference.as_raw(),
-            &mut error,
+            &raw mut error,
         );
         let raw = NonNull::new(raw).ok_or_else(|| take_error(error))?;
         Ok(Self {
@@ -339,8 +339,8 @@ impl Session {
         unsafe {
             ffi::session::mpc_session_copy_security_identity(
                 self.raw.as_ptr(),
-                &mut array,
-                &mut count,
+                &raw mut array,
+                &raw mut count,
             );
         };
         take_handle_array(array, count, |raw| unsafe {
@@ -364,8 +364,8 @@ impl Session {
         unsafe {
             ffi::session::mpc_session_copy_connected_peers(
                 self.raw.as_ptr(),
-                &mut array,
-                &mut count,
+                &raw mut array,
+                &raw mut count,
             );
         };
         take_handle_array(array, count, |raw| unsafe { PeerId::from_owned_raw(raw) })
@@ -388,7 +388,7 @@ impl Session {
                 peer_ptrs.as_ptr(),
                 peer_ptrs.len(),
                 mode.as_raw(),
-                &mut error,
+                &raw mut error,
             )
         };
         if status == ffi::core::MPC_OK {
@@ -465,7 +465,7 @@ impl Session {
                 peer.as_ptr(),
                 context,
                 completion,
-                &mut error,
+                &raw mut error,
             )
         };
         let raw = NonNull::new(raw).ok_or_else(|| take_error(error))?;
@@ -487,7 +487,7 @@ impl Session {
                 self.raw.as_ptr(),
                 stream_name.as_ptr(),
                 peer.as_ptr(),
-                &mut error,
+                &raw mut error,
             )
         };
         let raw = NonNull::new(raw).ok_or_else(|| take_error(error))?;
@@ -508,9 +508,9 @@ impl Session {
             ffi::session::mpc_session_nearby_connection_data_for_peer(
                 self.raw.as_ptr(),
                 peer.as_ptr(),
-                &mut bytes,
-                &mut length,
-                &mut error,
+                &raw mut bytes,
+                &raw mut length,
+                &raw mut error,
             )
         };
         if status != ffi::core::MPC_OK {
@@ -695,7 +695,7 @@ impl OutputStream {
                 self.raw.as_ptr(),
                 bytes.as_ptr().cast::<c_void>(),
                 bytes.len(),
-                &mut error,
+                &raw mut error,
             )
         };
         if written >= 0 {
@@ -747,7 +747,7 @@ impl InputStream {
                 self.raw.as_ptr(),
                 buffer.as_mut_ptr().cast::<c_void>(),
                 buffer.len(),
-                &mut error,
+                &raw mut error,
             )
         };
         if read < 0 {
