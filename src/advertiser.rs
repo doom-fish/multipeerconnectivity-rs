@@ -3,14 +3,13 @@
 use core::ffi::c_void;
 use core::ptr::{self, NonNull};
 use std::collections::HashMap;
-use std::ffi::CString;
 use std::fmt;
 use std::sync::Mutex;
 
 use doom_fish_utils::panic_safe::catch_user_panic;
 
 use crate::error::{
-    copy_and_free_string, take_framework_error, FrameworkError, MultipeerError, Result,
+    copy_and_free_string, take_error, take_framework_error, FrameworkError, Result,
 };
 use crate::ffi;
 use crate::peer::PeerId;
@@ -37,30 +36,6 @@ impl Drop for RetainedSessionHandle {
     fn drop(&mut self) {
         unsafe { ffi::core::mpc_object_release(self.0) };
     }
-}
-
-fn validate_service_type(service_type: &str) -> Result<CString> {
-    if service_type.is_empty() {
-        return Err(MultipeerError::InvalidArgument(
-            "service type must not be empty".into(),
-        ));
-    }
-    if service_type.len() > 15 {
-        return Err(MultipeerError::InvalidArgument(
-            "service type must be at most 15 ASCII characters".into(),
-        ));
-    }
-    if !service_type
-        .bytes()
-        .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
-    {
-        return Err(MultipeerError::InvalidArgument(
-            "service type must contain only lowercase ASCII letters, digits, or hyphens".into(),
-        ));
-    }
-    CString::new(service_type).map_err(|_| {
-        MultipeerError::InvalidArgument("service type must not contain NUL bytes".into())
-    })
 }
 
 #[derive(Debug)]
@@ -147,21 +122,9 @@ impl NearbyServiceAdvertiser {
         discovery_info: Option<&HashMap<String, String>>,
         service_type: impl AsRef<str>,
     ) -> Result<Self> {
-        let discovery_info_json = match discovery_info {
-            Some(info) => Some(
-                CString::new(
-                    serde_json::to_string(info)
-                        .map_err(|err| MultipeerError::InvalidArgument(err.to_string()))?,
-                )
-                .map_err(|_| {
-                    MultipeerError::InvalidArgument(
-                        "discovery info JSON must not contain NUL bytes".into(),
-                    )
-                })?,
-            ),
-            None => None,
-        };
-        let service_type = validate_service_type(service_type.as_ref())?;
+        let discovery_info_json = crate::validation::discovery_info_cstring(discovery_info)?;
+        let service_type = crate::validation::service_type_cstring(service_type.as_ref())?;
+        let mut error = ptr::null_mut();
         let raw = unsafe {
             ffi::advertiser::mpc_advertiser_create(
                 peer.as_ptr(),
@@ -169,11 +132,10 @@ impl NearbyServiceAdvertiser {
                     .as_ref()
                     .map_or(ptr::null(), |value| value.as_ptr()),
                 service_type.as_ptr(),
+                &raw mut error,
             )
         };
-        let raw = NonNull::new(raw).ok_or_else(|| {
-            MultipeerError::OperationFailed("failed to create MCNearbyServiceAdvertiser".into())
-        })?;
+        let raw = NonNull::new(raw).ok_or_else(|| take_error(error))?;
         Ok(Self {
             raw,
             delegate_state: None,
@@ -361,5 +323,77 @@ unsafe extern "C" fn advertiser_error_trampoline(context: *mut c_void, error: *m
         if let Some(callback) = callbacks.on_error.as_mut() {
             catch_user_panic("advertiser_error_trampoline", || callback(error));
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use core::ffi::CStr;
+    use core::ptr;
+
+    use crate::error::{take_error, MultipeerError};
+    use crate::ffi;
+    use crate::peer::PeerId;
+
+    fn bridge_error(json: Option<&CStr>, service_type: &CStr) -> String {
+        let peer = PeerId::new("bridge-validation").expect("peer");
+        let mut error = ptr::null_mut();
+        let raw = unsafe {
+            ffi::advertiser::mpc_advertiser_create(
+                peer.as_ptr(),
+                json.map_or(ptr::null(), CStr::as_ptr),
+                service_type.as_ptr(),
+                &raw mut error,
+            )
+        };
+        assert!(raw.is_null());
+        match take_error(error) {
+            MultipeerError::InvalidArgument(message) => message,
+            other => panic!("expected an invalid-argument error, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn bridge_reports_malformed_discovery_info_json() {
+        for json in [c"not json", c"[1]", c"{\"k\":1}"] {
+            assert_eq!(
+                bridge_error(Some(json), c"doom-chat"),
+                "discoveryInfo must be a JSON object of string pairs"
+            );
+        }
+    }
+
+    #[test]
+    fn bridge_reports_discovery_info_the_framework_would_abort_on() {
+        assert_eq!(
+            bridge_error(Some(c"{\"\":\"v\"}"), c"doom-chat"),
+            "discovery info keys must not be empty"
+        );
+        assert_eq!(
+            bridge_error(Some(c"{\"a=b\":\"v\"}"), c"doom-chat"),
+            "discovery info keys must contain only printable ASCII characters other than '='"
+        );
+        let oversized = format!("{{\"k\":\"{}\"}}", "v".repeat(253));
+        let oversized = std::ffi::CString::new(oversized).expect("json");
+        assert_eq!(
+            bridge_error(Some(&oversized), c"doom-chat"),
+            "discovery info entries must be at most 254 bytes as key=value"
+        );
+    }
+
+    #[test]
+    fn bridge_reports_invalid_service_types() {
+        assert_eq!(
+            bridge_error(None, c"-chat"),
+            "service type must not begin or end with a hyphen"
+        );
+        assert_eq!(
+            bridge_error(None, c"doom--chat"),
+            "service type must not contain consecutive hyphens"
+        );
+        assert_eq!(
+            bridge_error(None, c"1234"),
+            "service type must contain at least one letter"
+        );
     }
 }

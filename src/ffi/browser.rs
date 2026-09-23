@@ -5,7 +5,11 @@ pub type BrowserLostCallback = unsafe extern "C" fn(*mut c_void, *mut c_void);
 pub type BrowserErrorCallback = unsafe extern "C" fn(*mut c_void, *mut c_void);
 
 extern "C" {
-    pub fn mpc_browser_create(peer: *mut c_void, service_type: *const c_char) -> *mut c_void;
+    pub fn mpc_browser_create(
+        peer: *mut c_void,
+        service_type: *const c_char,
+        error_out: *mut *mut c_void,
+    ) -> *mut c_void;
     pub fn mpc_browser_copy_my_peer(browser: *mut c_void) -> *mut c_void;
     pub fn mpc_browser_service_type(browser: *mut c_void) -> *mut c_char;
     pub fn mpc_browser_start(browser: *mut c_void);

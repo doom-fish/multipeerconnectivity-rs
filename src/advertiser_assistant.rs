@@ -3,41 +3,16 @@
 use core::ffi::c_void;
 use core::ptr::{self, NonNull};
 use std::collections::HashMap;
-use std::ffi::CString;
 use std::fmt;
 use std::sync::Mutex;
 
 use doom_fish_utils::panic_safe::catch_user_panic;
 
-use crate::error::{copy_and_free_string, MultipeerError, Result};
+use crate::error::{copy_and_free_string, take_error, Result};
 use crate::ffi;
 use crate::session::Session;
 
 type AssistantHandler = dyn FnMut() + Send;
-
-fn validate_service_type(service_type: &str) -> Result<CString> {
-    if service_type.is_empty() {
-        return Err(MultipeerError::InvalidArgument(
-            "service type must not be empty".into(),
-        ));
-    }
-    if service_type.len() > 15 {
-        return Err(MultipeerError::InvalidArgument(
-            "service type must be at most 15 ASCII characters".into(),
-        ));
-    }
-    if !service_type
-        .bytes()
-        .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
-    {
-        return Err(MultipeerError::InvalidArgument(
-            "service type must contain only lowercase ASCII letters, digits, or hyphens".into(),
-        ));
-    }
-    CString::new(service_type).map_err(|_| {
-        MultipeerError::InvalidArgument("service type must not contain NUL bytes".into())
-    })
-}
 
 /// Configures `MultipeerConnectivity` advertiser-assistant delegate callbacks.
 pub struct AdvertiserAssistantDelegate {
@@ -114,21 +89,9 @@ impl AdvertiserAssistant {
         discovery_info: Option<&HashMap<String, String>>,
         session: &Session,
     ) -> Result<Self> {
-        let discovery_info_json = match discovery_info {
-            Some(info) => Some(
-                CString::new(
-                    serde_json::to_string(info)
-                        .map_err(|err| MultipeerError::InvalidArgument(err.to_string()))?,
-                )
-                .map_err(|_| {
-                    MultipeerError::InvalidArgument(
-                        "discovery info JSON must not contain NUL bytes".into(),
-                    )
-                })?,
-            ),
-            None => None,
-        };
-        let service_type = validate_service_type(service_type.as_ref())?;
+        let discovery_info_json = crate::validation::discovery_info_cstring(discovery_info)?;
+        let service_type = crate::validation::service_type_cstring(service_type.as_ref())?;
+        let mut error = ptr::null_mut();
         let raw = unsafe {
             ffi::advertiser_assistant::mpc_advertiser_assistant_create(
                 service_type.as_ptr(),
@@ -136,11 +99,10 @@ impl AdvertiserAssistant {
                     .as_ref()
                     .map_or(ptr::null(), |value| value.as_ptr()),
                 session.as_ptr(),
+                &raw mut error,
             )
         };
-        let raw = NonNull::new(raw).ok_or_else(|| {
-            MultipeerError::OperationFailed("failed to create MCAdvertiserAssistant".into())
-        })?;
+        let raw = NonNull::new(raw).ok_or_else(|| take_error(error))?;
         Ok(Self {
             raw,
             delegate_state: None,

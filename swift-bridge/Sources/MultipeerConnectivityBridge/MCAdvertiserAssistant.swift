@@ -10,17 +10,20 @@ func advertiserAssistant(_ ptr: UnsafeMutableRawPointer) -> MCAdvertiserAssistan
 public func mpc_advertiser_assistant_create(
     _ serviceType: UnsafePointer<CChar>,
     _ discoveryInfoJson: UnsafePointer<CChar>?,
-    _ sessionPtr: UnsafeMutableRawPointer
+    _ sessionPtr: UnsafeMutableRawPointer,
+    _ errorOut: UnsafeMutablePointer<UnsafeMutableRawPointer?>?
 ) -> UnsafeMutableRawPointer? {
     let type = copyCString(serviceType)
-    guard validateServiceType(type, errorOut: nil) else { return nil }
-    let info = decodeDiscoveryInfo(discoveryInfoJson, errorOut: nil)
+    guard validateServiceType(type, errorOut: errorOut) else { return nil }
+    var info: [String: String]?
+    guard decodeDiscoveryInfo(discoveryInfoJson, into: &info, errorOut: errorOut) else { return nil }
+    let validatedInfo = info
     return onMain {
         _ = NSApplication.shared
         return retainObject(
             MCAdvertiserAssistant(
                 serviceType: type,
-                discoveryInfo: info,
+                discoveryInfo: validatedInfo,
                 session: session(sessionPtr)
             )
         )

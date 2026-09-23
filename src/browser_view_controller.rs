@@ -6,16 +6,15 @@
 )]
 
 use core::ffi::c_void;
-use core::ptr::NonNull;
+use core::ptr::{self, NonNull};
 use std::collections::HashMap;
-use std::ffi::CString;
 use std::fmt;
 use std::sync::Mutex;
 
 use doom_fish_utils::panic_safe::catch_user_panic;
 
 use crate::browser::NearbyServiceBrowser;
-use crate::error::{MultipeerError, Result};
+use crate::error::{take_error, Result};
 use crate::ffi;
 use crate::peer::PeerId;
 use crate::session::Session;
@@ -23,30 +22,6 @@ use crate::session::Session;
 type FinishHandler = dyn FnMut() + Send;
 type CancelHandler = dyn FnMut() + Send;
 type ShouldPresentHandler = dyn FnMut(PeerId, Option<HashMap<String, String>>) -> bool + Send;
-
-fn validate_service_type(service_type: &str) -> Result<CString> {
-    if service_type.is_empty() {
-        return Err(MultipeerError::InvalidArgument(
-            "service type must not be empty".into(),
-        ));
-    }
-    if service_type.len() > 15 {
-        return Err(MultipeerError::InvalidArgument(
-            "service type must be at most 15 ASCII characters".into(),
-        ));
-    }
-    if !service_type
-        .bytes()
-        .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
-    {
-        return Err(MultipeerError::InvalidArgument(
-            "service type must contain only lowercase ASCII letters, digits, or hyphens".into(),
-        ));
-    }
-    CString::new(service_type).map_err(|_| {
-        MultipeerError::InvalidArgument("service type must not contain NUL bytes".into())
-    })
-}
 
 /// Configures `MultipeerConnectivity` browser-view-controller delegate callbacks.
 pub struct BrowserViewControllerDelegate {
@@ -131,16 +106,16 @@ pub struct BrowserViewController {
 impl BrowserViewController {
     /// Creates a `MultipeerConnectivity` browser view controller from a service type.
     pub fn new_with_service_type(service_type: impl AsRef<str>, session: &Session) -> Result<Self> {
-        let service_type = validate_service_type(service_type.as_ref())?;
+        let service_type = crate::validation::service_type_cstring(service_type.as_ref())?;
+        let mut error = ptr::null_mut();
         let raw = unsafe {
             ffi::browser_view_controller::mpc_browser_view_controller_create_with_service_type(
                 service_type.as_ptr(),
                 session.as_ptr(),
+                &raw mut error,
             )
         };
-        let raw = NonNull::new(raw).ok_or_else(|| {
-            MultipeerError::OperationFailed("failed to create MCBrowserViewController".into())
-        })?;
+        let raw = NonNull::new(raw).ok_or_else(|| take_error(error))?;
         Ok(Self {
             raw,
             delegate_state: None,

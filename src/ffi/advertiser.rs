@@ -9,6 +9,7 @@ extern "C" {
         peer: *mut c_void,
         discovery_info_json: *const c_char,
         service_type: *const c_char,
+        error_out: *mut *mut c_void,
     ) -> *mut c_void;
     pub fn mpc_advertiser_copy_my_peer(advertiser: *mut c_void) -> *mut c_void;
     pub fn mpc_advertiser_discovery_info_json(advertiser: *mut c_void) -> *mut c_char;

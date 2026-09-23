@@ -9,10 +9,11 @@ func browserViewController(_ ptr: UnsafeMutableRawPointer) -> MCBrowserViewContr
 @_cdecl("mpc_browser_view_controller_create_with_service_type")
 public func mpc_browser_view_controller_create_with_service_type(
     _ serviceType: UnsafePointer<CChar>,
-    _ sessionPtr: UnsafeMutableRawPointer
+    _ sessionPtr: UnsafeMutableRawPointer,
+    _ errorOut: UnsafeMutablePointer<UnsafeMutableRawPointer?>?
 ) -> UnsafeMutableRawPointer? {
     let type = copyCString(serviceType)
-    guard validateServiceType(type, errorOut: nil) else { return nil }
+    guard validateServiceType(type, errorOut: errorOut) else { return nil }
     return onMain {
         _ = NSApplication.shared
         return retainObject(MCBrowserViewController(serviceType: type, session: session(sessionPtr)))

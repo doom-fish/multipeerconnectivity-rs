@@ -8,6 +8,7 @@ extern "C" {
     pub fn mpc_browser_view_controller_create_with_service_type(
         service_type: *const c_char,
         session: *mut c_void,
+        error_out: *mut *mut c_void,
     ) -> *mut c_void;
     pub fn mpc_browser_view_controller_create_with_browser(
         browser: *mut c_void,

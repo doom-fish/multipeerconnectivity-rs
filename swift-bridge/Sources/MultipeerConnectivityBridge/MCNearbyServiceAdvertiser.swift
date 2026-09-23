@@ -9,11 +9,13 @@ func advertiser(_ ptr: UnsafeMutableRawPointer) -> MCNearbyServiceAdvertiser {
 public func mpc_advertiser_create(
     _ peerPtr: UnsafeMutableRawPointer,
     _ discoveryInfoJson: UnsafePointer<CChar>?,
-    _ serviceType: UnsafePointer<CChar>
+    _ serviceType: UnsafePointer<CChar>,
+    _ errorOut: UnsafeMutablePointer<UnsafeMutableRawPointer?>?
 ) -> UnsafeMutableRawPointer? {
     let type = copyCString(serviceType)
-    guard validateServiceType(type, errorOut: nil) else { return nil }
-    let info = decodeDiscoveryInfo(discoveryInfoJson, errorOut: nil)
+    guard validateServiceType(type, errorOut: errorOut) else { return nil }
+    var info: [String: String]?
+    guard decodeDiscoveryInfo(discoveryInfoJson, into: &info, errorOut: errorOut) else { return nil }
     return retainObject(
         MCNearbyServiceAdvertiser(
             peer: peer(peerPtr),

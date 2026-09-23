@@ -8,10 +8,11 @@ func browser(_ ptr: UnsafeMutableRawPointer) -> MCNearbyServiceBrowser {
 @_cdecl("mpc_browser_create")
 public func mpc_browser_create(
     _ peerPtr: UnsafeMutableRawPointer,
-    _ serviceType: UnsafePointer<CChar>
+    _ serviceType: UnsafePointer<CChar>,
+    _ errorOut: UnsafeMutablePointer<UnsafeMutableRawPointer?>?
 ) -> UnsafeMutableRawPointer? {
     let type = copyCString(serviceType)
-    guard validateServiceType(type, errorOut: nil) else { return nil }
+    guard validateServiceType(type, errorOut: errorOut) else { return nil }
     return retainObject(MCNearbyServiceBrowser(peer: peer(peerPtr), serviceType: type))
 }
 

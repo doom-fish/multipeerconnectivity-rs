@@ -16,6 +16,7 @@ pub mod ffi;
 pub mod peer;
 pub(crate) mod refcount;
 pub mod session;
+mod validation;
 
 pub use advertiser::{
     InvitationResponse, NearbyServiceAdvertiser, NearbyServiceAdvertiserDelegate,

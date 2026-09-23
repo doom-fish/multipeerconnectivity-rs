@@ -103,19 +103,40 @@ func dataBuffer(_ data: Data) -> UnsafeMutableRawPointer? {
 
 func decodeDiscoveryInfo(
     _ discoveryInfoJson: UnsafePointer<CChar>?,
+    into info: inout [String: String]?,
     errorOut: UnsafeMutablePointer<UnsafeMutableRawPointer?>?
-) -> [String: String]? {
-    guard let discoveryInfoJson else { return nil }
+) -> Bool {
+    info = nil
+    guard let discoveryInfoJson else { return true }
     let string = copyCString(discoveryInfoJson)
-    guard !string.isEmpty else { return nil }
+    guard !string.isEmpty else { return true }
     guard let data = string.data(using: .utf8),
           let parsed = try? JSONSerialization.jsonObject(with: data, options: []),
           let dict = parsed as? [String: String]
     else {
         writeInvalidArgument(errorOut, "discoveryInfo must be a JSON object of string pairs")
-        return nil
+        return false
     }
-    return dict
+    for (key, value) in dict {
+        let keyBytes = key.utf8
+        guard !keyBytes.isEmpty else {
+            writeInvalidArgument(errorOut, "discovery info keys must not be empty")
+            return false
+        }
+        guard keyBytes.allSatisfy({ $0 >= 0x20 && $0 <= 0x7E && $0 != 0x3D }) else {
+            writeInvalidArgument(
+                errorOut,
+                "discovery info keys must contain only printable ASCII characters other than '='"
+            )
+            return false
+        }
+        guard keyBytes.count + 1 + value.utf8.count <= 254 else {
+            writeInvalidArgument(errorOut, "discovery info entries must be at most 254 bytes as key=value")
+            return false
+        }
+    }
+    info = dict
+    return true
 }
 
 func jsonCString(for discoveryInfo: [String: String]?) -> UnsafeMutablePointer<CChar>? {
@@ -174,22 +195,36 @@ func validateServiceType(
     _ serviceType: String,
     errorOut: UnsafeMutablePointer<UnsafeMutableRawPointer?>?
 ) -> Bool {
-    guard !serviceType.isEmpty else {
+    let bytes = Array(serviceType.utf8)
+    guard !bytes.isEmpty else {
         writeInvalidArgument(errorOut, "service type must not be empty")
         return false
     }
-    guard serviceType.count <= 15 else {
+    guard bytes.count <= 15 else {
         writeInvalidArgument(errorOut, "service type must be at most 15 ASCII characters")
         return false
     }
-    let valid = serviceType.utf8.allSatisfy { byte in
-        (byte >= 97 && byte <= 122) || (byte >= 48 && byte <= 57) || byte == 45
+    let isLetter = { (byte: UInt8) in byte >= 97 && byte <= 122 }
+    let valid = bytes.allSatisfy { byte in
+        isLetter(byte) || (byte >= 48 && byte <= 57) || byte == 45
     }
     guard valid else {
         writeInvalidArgument(
             errorOut,
             "service type must contain only lowercase ASCII letters, digits, or hyphens"
         )
+        return false
+    }
+    guard bytes.contains(where: isLetter) else {
+        writeInvalidArgument(errorOut, "service type must contain at least one letter")
+        return false
+    }
+    guard bytes.first != 45, bytes.last != 45 else {
+        writeInvalidArgument(errorOut, "service type must not begin or end with a hyphen")
+        return false
+    }
+    guard !serviceType.contains("--") else {
+        writeInvalidArgument(errorOut, "service type must not contain consecutive hyphens")
         return false
     }
     return true

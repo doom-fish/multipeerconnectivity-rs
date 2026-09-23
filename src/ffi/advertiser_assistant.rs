@@ -7,6 +7,7 @@ extern "C" {
         service_type: *const c_char,
         discovery_info_json: *const c_char,
         session: *mut c_void,
+        error_out: *mut *mut c_void,
     ) -> *mut c_void;
     pub fn mpc_advertiser_assistant_copy_session(assistant: *mut c_void) -> *mut c_void;
     pub fn mpc_advertiser_assistant_discovery_info_json(assistant: *mut c_void) -> *mut c_char;
