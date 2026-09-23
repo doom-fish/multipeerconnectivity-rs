@@ -1,5 +1,64 @@
 # Changelog
 
+All notable changes to this project are documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [0.5.0] - Unreleased
+
+### Security
+
+- `SessionEventStream` no longer accepts every peer certificate on the
+  caller's behalf. `SessionEvent::CertificateReceived` carries a
+  `CertificateHandle`: the peer connects only after `accept()`, while
+  `reject()`, dropping the handle, or dropping the event unread (stream
+  drop, buffer overflow) refuses it. **Breaking:** stream consumers must
+  accept peers explicitly, including peers without a security identity.
+- `EncryptionPreference::Required` is the documented default and every
+  example uses it. The docs used to call `Optional` the default, but it
+  accepts unencrypted connections, so a nearby attacker could downgrade a
+  session. The bridge maps an unknown raw preference to `Required`.
+- Delegate and async-stream contexts are reference-counted between Rust and
+  the Swift delegate objects, so a callback already running on the
+  framework's queue can no longer use a freed context after
+  `clear_delegate` or a stream drop.
+
+### Fixed
+
+- Service types that break RFC 6335 (no letter, a leading, trailing or
+  doubled hyphen) and discovery info with an empty or non-printable-ASCII
+  key, a key containing `=`, or a `key=value` pair over 254 bytes return
+  `MultipeerError::InvalidArgument`. They used to abort the process with an
+  uncaught `NSInvalidArgumentException`.
+- The Swift bridge reports its validation errors instead of silently
+  dropping malformed discovery-info JSON or returning a generic "failed to
+  create" error.
+- Dropping an async stream or calling `clear_delegate` no longer detaches a
+  delegate installed later (another stream, `set_callbacks`, or a clone's
+  delegate). A dropped stream hands the delegate back to the one it
+  replaced if that one is still active.
+- The Swift bridge converts error codes and enum raw values with clamping
+  instead of trapping on out-of-range values.
+
+### Changed
+
+- **Breaking:** `SessionEvent::CertificateReceived` has a new
+  `handle: CertificateHandle` field.
+- **Breaking (raw FFI):** `mpc_advertiser_create`, `mpc_browser_create`,
+  `mpc_advertiser_assistant_create` and
+  `mpc_browser_view_controller_create_with_service_type` take an error
+  out-pointer; the `mpc_*_clear_delegate` functions take the owner's
+  context; `mpc_*_set_delegate` and `mpc_*_stream_subscribe` take context
+  retain/release callbacks.
+- Requires `doom-fish-utils` `>=0.4.1, <0.5`.
+- `rust-version` is now 1.82 (was 1.76).
+
+### Added
+
+- `async_api::CertificateHandle` with `accept()` and `reject()`.
+- `EncryptionPreference` implements `Default`, returning `Required`.
+
 ## [0.4.1] - 2026-05-20
 
 - Widen `doom-fish-utils` dependency bound to `<0.4` so the 0.3.x SPSC-ring release resolves cleanly. No source changes.

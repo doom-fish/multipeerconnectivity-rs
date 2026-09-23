@@ -11,7 +11,7 @@
 //!
 //! ```toml
 //! [dependencies]
-//! multipeerconnectivity = { package = "multipeerconnectivity-rs", version = "0.4", features = ["async"] }
+//! multipeerconnectivity = { package = "multipeerconnectivity-rs", version = "0.5", features = ["async"] }
 //! ```
 //!
 //! # Quick start

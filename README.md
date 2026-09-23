@@ -2,7 +2,7 @@
 
 Safe Rust bindings for Apple's [MultipeerConnectivity](https://developer.apple.com/documentation/multipeerconnectivity) framework on macOS — peer IDs, sessions, nearby browser/advertiser APIs, advertiser assistant, browser view controller, and typed `MCError` handling.
 
-> **Status:** experimental. v0.4 covers the public MultipeerConnectivity surface for `MCPeerID`, `MCSession`, `MCNearbyServiceAdvertiser`, `MCNearbyServiceBrowser`, `MCAdvertiserAssistant`, `MCBrowserViewController`, `MCError`, all five public delegate protocols via builder-style Rust wrappers, and Tier-2 async event streams where available.
+> **Status:** experimental. v0.5 covers the public MultipeerConnectivity surface for `MCPeerID`, `MCSession`, `MCNearbyServiceAdvertiser`, `MCNearbyServiceBrowser`, `MCAdvertiserAssistant`, `MCBrowserViewController`, `MCError`, all five public delegate protocols via builder-style Rust wrappers, and Tier-2 async event streams where available.
 
 Apple deprecates the whole `MultipeerConnectivity` framework in the macOS 27 SDK ("Use Network Framework instead"). It still works, but prefer Network framework for new code.
 
@@ -15,6 +15,15 @@ Apple deprecates the whole `MultipeerConnectivity` framework in the macOS 27 SDK
 
 - Cargo package: `multipeerconnectivity-rs`
 - Rust crate: `multipeerconnectivity`
+
+## Installation
+
+```toml
+[dependencies]
+multipeerconnectivity-rs = { version = "0.5", features = ["async"] }
+```
+
+Leave out `features` if you don't need the async event streams.
 
 ## Quick start
 
