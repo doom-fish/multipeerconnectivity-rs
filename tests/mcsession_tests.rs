@@ -6,12 +6,12 @@ use multipeerconnectivity::{
 #[test]
 fn session_exposes_properties_and_delegate_setup() -> Result<()> {
     let peer = PeerId::new("doom-fish-session")?;
-    let mut session = Session::new(&peer, EncryptionPreference::Optional)?;
+    let mut session = Session::new(&peer, EncryptionPreference::Required)?;
     assert_eq!(session.my_peer_id().display_name(), "doom-fish-session");
     assert_eq!(session.security_identity().len(), 0);
     assert_eq!(
         session.encryption_preference(),
-        EncryptionPreference::Optional
+        EncryptionPreference::Required
     );
     assert!(session.connected_peers().is_empty());
     session.set_callbacks(
@@ -31,4 +31,26 @@ fn session_exposes_properties_and_delegate_setup() -> Result<()> {
 fn session_reports_peer_limits() {
     assert!(session_minimum_number_of_peers() >= 2);
     assert!(session_maximum_number_of_peers() >= session_minimum_number_of_peers());
+}
+
+#[test]
+fn encryption_preference_defaults_to_required() {
+    assert_eq!(
+        EncryptionPreference::default(),
+        EncryptionPreference::Required
+    );
+}
+
+#[test]
+fn every_encryption_preference_round_trips() -> Result<()> {
+    let peer = PeerId::new("doom-fish-encryption")?;
+    for preference in [
+        EncryptionPreference::Required,
+        EncryptionPreference::Optional,
+        EncryptionPreference::None,
+    ] {
+        let session = Session::new(&peer, preference)?;
+        assert_eq!(session.encryption_preference(), preference);
+    }
+    Ok(())
 }

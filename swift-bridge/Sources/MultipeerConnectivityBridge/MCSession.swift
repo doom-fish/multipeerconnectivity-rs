@@ -20,9 +20,9 @@ func inputStream(_ ptr: UnsafeMutableRawPointer) -> InputStream {
 
 private func encryptionPreference(_ rawValue: Int32) -> MCEncryptionPreference {
     switch rawValue {
-    case 1: .required
+    case 0: .optional
     case 2: .none
-    default: .optional
+    default: .required
     }
 }
 

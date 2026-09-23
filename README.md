@@ -16,7 +16,7 @@ use multipeerconnectivity::prelude::*;
 
 fn main() -> Result<()> {
     let peer = PeerId::new("doom-fish-demo")?;
-    let session = Session::new(&peer, EncryptionPreference::Optional)?;
+    let session = Session::new(&peer, EncryptionPreference::Required)?;
     let browser = NearbyServiceBrowser::new(&peer, "doom-chat")?;
 
     println!("local peer = {}", peer.display_name());
@@ -25,6 +25,10 @@ fn main() -> Result<()> {
     Ok(())
 }
 ```
+
+## Encryption
+
+Create sessions with `EncryptionPreference::Required`, which is also `EncryptionPreference::default()`. `Optional` accepts unencrypted connections, so a nearby attacker can downgrade the session to plaintext, and `None` turns encryption off. Peers that use `None` can't join a `Required` session. Encryption alone doesn't authenticate peers; see the certificate notes below.
 
 ## Async API
 
@@ -38,7 +42,7 @@ use multipeerconnectivity::async_api::SessionEventStream;
 
 # fn demo() -> multipeerconnectivity::Result<()> {
 let peer = PeerId::new("async-demo")?;
-let session = Session::new(&peer, EncryptionPreference::Optional)?;
+let session = Session::new(&peer, EncryptionPreference::Required)?;
 let stream = SessionEventStream::subscribe_default(&session);
 assert!(!stream.is_closed());
 # Ok(())

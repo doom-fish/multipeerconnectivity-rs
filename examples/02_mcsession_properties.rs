@@ -2,7 +2,7 @@ use multipeerconnectivity::prelude::*;
 
 fn main() -> Result<()> {
     let peer = PeerId::new("doom-fish-session")?;
-    let session = Session::new(&peer, EncryptionPreference::Optional)?;
+    let session = Session::new(&peer, EncryptionPreference::Required)?;
 
     println!("session peer: {}", session.my_peer_id().display_name());
     println!(

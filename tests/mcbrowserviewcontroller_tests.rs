@@ -7,7 +7,7 @@ use multipeerconnectivity::{
 #[ignore = "MCBrowserViewController is UI-driven; run manually from a main-thread harness"]
 fn browser_view_controller_roundtrips_properties() -> Result<()> {
     let peer = PeerId::new("doom-fish-ui")?;
-    let session = Session::new(&peer, EncryptionPreference::Optional)?;
+    let session = Session::new(&peer, EncryptionPreference::Required)?;
     let mut controller = BrowserViewController::new_with_service_type("doom-chat", &session)?;
 
     controller.set_callbacks(

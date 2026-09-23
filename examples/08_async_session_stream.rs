@@ -10,7 +10,7 @@ use multipeerconnectivity::{EncryptionPreference, PeerId, Session};
 #[cfg(feature = "async")]
 fn main() -> multipeerconnectivity::Result<()> {
     let peer = PeerId::new("async-session-example")?;
-    let session = Session::new(&peer, EncryptionPreference::Optional)?;
+    let session = Session::new(&peer, EncryptionPreference::Required)?;
     let stream = SessionEventStream::subscribe_default(&session);
 
     println!(

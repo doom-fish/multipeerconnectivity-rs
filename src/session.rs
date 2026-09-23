@@ -38,12 +38,15 @@ impl SessionSendDataMode {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 /// Represents `MultipeerConnectivity` session encryption preferences.
 pub enum EncryptionPreference {
-    /// Uses the default `MultipeerConnectivity` encryption policy.
+    /// Prefers encryption but accepts unencrypted connections, so a nearby
+    /// attacker can downgrade the session to plaintext. Prefer [`Self::Required`].
     Optional,
-    /// Requires `MultipeerConnectivity` session encryption.
+    /// Requires `MultipeerConnectivity` session encryption. This is the default
+    /// and the recommended preference.
+    #[default]
     Required,
     /// Disables `MultipeerConnectivity` session encryption when permitted.
     None,

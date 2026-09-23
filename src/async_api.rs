@@ -23,7 +23,7 @@
 //! # fn is_trusted(_peer: &PeerId, _items: &[SecurityIdentityItem]) -> bool { false }
 //! # async fn run() -> multipeerconnectivity::Result<()> {
 //! let peer = PeerId::new("my-peer")?;
-//! let session = Session::new(&peer, EncryptionPreference::Optional)?;
+//! let session = Session::new(&peer, EncryptionPreference::Required)?;
 //! let stream = SessionEventStream::subscribe_default(&session);
 //!
 //! while let Some(event) = stream.next().await {
