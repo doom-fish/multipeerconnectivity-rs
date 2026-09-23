@@ -48,6 +48,8 @@ assert!(!stream.is_closed());
 
 The feature adds `SessionEventStream`, `BrowserEventStream`, and `AdvertiserEventStream`. Each stream unsubscribes automatically when dropped.
 
+`SessionEventStream` never accepts a peer on its own. Each `SessionEvent::CertificateReceived` carries a `CertificateHandle`, and the peer can connect only after you call `accept()` on it. Calling `reject()`, dropping the handle, or dropping the event unread (including when the stream is dropped or its buffer overflows) refuses the peer. The framework does not validate certificates, so check them before accepting. Peers without a security identity arrive with no certificate items and still need an explicit `accept()`.
+
 Async examples:
 
 ```bash
@@ -70,6 +72,8 @@ cargo run --example 10_async_advertiser_stream --features async
 ## Delegate callbacks
 
 `MCSession`, `MCNearbyServiceBrowser`, `MCNearbyServiceAdvertiser`, `MCAdvertiserAssistant`, and `MCBrowserViewController` all use Swift-side delegate objects that call back into Rust via function pointers + refcon. The safe Rust API wraps that in builder-style delegate structs such as `SessionDelegate` and `BrowserViewControllerDelegate`.
+
+A `SessionDelegate` without `on_certificate` leaves the decision to the framework, which accepts every peer certificate without validating it. Register `on_certificate` and return `false` for peers you don't trust.
 
 ## Examples
 
