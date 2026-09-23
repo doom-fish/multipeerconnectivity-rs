@@ -6,6 +6,8 @@ GAPS: 0
 EXEMPT: 0
 COVERAGE_PCT: 100.00%
 
+The symbol list was generated from the MacOSX26.2.sdk headers, which are no longer installed here. On 2026-09-23 it was re-checked against MacOSX26.5.sdk (identical headers) and MacOSX27.0.sdk (the same 78 symbols, each newly marked `API_DEPRECATED("Use Network Framework instead", macos(10.10, 27.0))`). VERIFIED means the symbol has a Rust entry point; it does not mean its behavior is tested. The `MCAdvertiserAssistant` and `MCBrowserViewController` tests are ignored because they need a main-thread UI harness.
+
 This audit counts logical Objective-C surface members (methods, properties, exported constants, and enum cases) from `MultipeerConnectivity.framework` headers. Container declarations such as `@interface`, `@protocol`, and enum type names are not counted separately, but the five public delegate protocol declarations are explicitly documented in a separate verification table below because the crate exposes them as Rust callback builders and async event streams where applicable. Delegate properties are treated as covered by the crate's callback-registration APIs even though the crate intentionally does not expose Objective-C delegate-object getters, and `PeerId::archived_data` / `PeerId::from_archived_data` are extra `NSSecureCoding` helpers that sit outside the header-derived symbol count.
 
 ## 🟢 VERIFIED

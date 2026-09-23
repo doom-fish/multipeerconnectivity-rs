@@ -4,6 +4,13 @@ Safe Rust bindings for Apple's [MultipeerConnectivity](https://developer.apple.c
 
 > **Status:** experimental. v0.4 covers the public MultipeerConnectivity surface for `MCPeerID`, `MCSession`, `MCNearbyServiceAdvertiser`, `MCNearbyServiceBrowser`, `MCAdvertiserAssistant`, `MCBrowserViewController`, `MCError`, all five public delegate protocols via builder-style Rust wrappers, and Tier-2 async event streams where available.
 
+Apple deprecates the whole `MultipeerConnectivity` framework in the macOS 27 SDK ("Use Network Framework instead"). It still works, but prefer Network framework for new code.
+
+## Requirements
+
+- macOS 13 or later, the deployment target of the Swift bridge, and a Swift toolchain (Xcode or the Command Line Tools) to build it.
+- Apps that browse or advertise must list `_<service-type>._tcp` and `_<service-type>._udp` under `NSBonjourServices` and set `NSLocalNetworkUsageDescription` in their `Info.plist`; macOS 15 and later can ask the user for local network access. Sandboxed apps also need the `com.apple.security.network.client` and `com.apple.security.network.server` entitlements.
+
 ## Package vs crate name
 
 - Cargo package: `multipeerconnectivity-rs`

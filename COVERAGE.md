@@ -2,6 +2,8 @@
 
 Audit source: `$(xcrun --sdk macosx --show-sdk-path)/System/Library/Frameworks/MultipeerConnectivity.framework/Versions/A/Headers`
 
+Re-checked on 2026-09-23 against the MacOSX26.5 and MacOSX27.0 SDK headers. The API surface is the same in both; the 27.0 SDK marks every class, protocol, enum and constant `API_DEPRECATED("Use Network Framework instead", macos(10.10, 27.0))`. "Implemented" means a Rust entry point exists. `MCAdvertiserAssistant` and `MCBrowserViewController` are only exercised by ignored tests that need a main-thread UI harness.
+
 ## MCPeerID
 
 | API | Status | Notes |
@@ -33,7 +35,7 @@ Audit source: `$(xcrun --sdk macosx --show-sdk-path)/System/Library/Frameworks/M
 | `session:didReceiveStream:withName:fromPeer:` | ✅ implemented | `SessionDelegate::on_stream` + `InputStream` |
 | `session:didStartReceivingResourceWithName:fromPeer:withProgress:` | ✅ implemented | `SessionDelegate::on_resource_started` + `ResourceTransfer` |
 | `session:didFinishReceivingResourceWithName:fromPeer:atURL:withError:` | ✅ implemented | `SessionDelegate::on_resource_finished` |
-| `session:didReceiveCertificate:fromPeer:certificateHandler:` | ✅ implemented | `SessionDelegate::on_certificate` |
+| `session:didReceiveCertificate:fromPeer:certificateHandler:` | ✅ implemented | `SessionDelegate::on_certificate`; `async_api::SessionEvent::CertificateReceived` with `CertificateHandle` (reject unless accepted) |
 | `nearbyConnectionDataForPeer:withCompletionHandler:` | ✅ implemented | `Session::nearby_connection_data_for_peer` |
 | `connectPeer:withNearbyConnectionData:` | ✅ implemented | `Session::connect_peer` |
 | `cancelConnectPeer:` | ✅ implemented | `Session::cancel_connect_peer` |
