@@ -9,12 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
-- `SessionEventStream` no longer accepts every peer certificate on the
-  caller's behalf. `SessionEvent::CertificateReceived` carries a
-  `CertificateHandle`: the peer connects only after `accept()`, while
-  `reject()`, dropping the handle, or dropping the event unread (stream
-  drop, buffer overflow) refuses it. **Breaking:** stream consumers must
-  accept peers explicitly, including peers without a security identity.
+- Peer certificates are always decided by an explicit `CertificatePolicy`
+  chosen when the session is created. Previously any session whose delegate
+  did not implement the certificate callback (no delegate, a
+  `set_callbacks` delegate without `on_certificate`) fell back to the
+  framework default of accepting every peer, and the async session stream
+  accepted every certificate itself. The bridge attaches the policy to the
+  `MCSession`, installs it as the default delegate, and routes the
+  certificate callback of every other delegate through it, so no path falls
+  back to the framework default.
 - `EncryptionPreference::Required` is the documented default and every
   example uses it. The docs used to call `Optional` the default, but it
   accepts unencrypted connections, so a nearby attacker could downgrade a
@@ -35,28 +38,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   dropping malformed discovery-info JSON or returning a generic "failed to
   create" error.
 - Dropping an async stream or calling `clear_delegate` no longer detaches a
-  delegate installed later (another stream, `set_callbacks`, or a clone's
-  delegate). A dropped stream hands the delegate back to the one it
-  replaced if that one is still active.
+  delegate installed later (another stream, `set_callbacks`, or a delegate
+  installed through another handle to the same object, such as
+  `BrowserViewController::session()`). A dropped stream hands the delegate
+  back to the one it replaced if that one is still active, and otherwise
+  to the session's certificate policy.
 - The Swift bridge converts error codes and enum raw values with clamping
   instead of trapping on out-of-range values.
+- `AdvertiserAssistant` and `BrowserViewController` no longer run their
+  calls through `DispatchQueue.main.sync`, which deadlocked when the main
+  thread was blocked; they require the main thread instead (see Changed).
 
 ### Changed
 
-- **Breaking:** `SessionEvent::CertificateReceived` has a new
-  `handle: CertificateHandle` field.
+- **Breaking:** `Session::new`, `Session::with_security_identity_items` and
+  `Session::with_security_identity` take a `CertificatePolicy`:
+  `AcceptAll` (a visible opt-in) or `Verify(verifier)`, whose verifier gets
+  a `CertificateRequest` that admits the peer only on `accept()` and
+  rejects it on `reject()` or drop. The request is `Send`, so it can be
+  decided later on another thread or task.
+- **Breaking:** `SessionDelegate::on_certificate` is removed, and the async
+  session stream no longer emits certificate events; certificate decisions
+  go through the session's policy.
+- **Breaking:** `AdvertiserAssistant::new`,
+  `BrowserViewController::new_with_service_type` and
+  `BrowserViewController::new_with_browser` return
+  `MultipeerError::MainThreadRequired` off the main thread (both types are
+  `!Send`, so later calls stay on it), and `new_with_browser` now returns
+  `Result`.
+- **Breaking:** `Session`, `NearbyServiceAdvertiser`, `NearbyServiceBrowser`,
+  `AdvertiserAssistant` and `BrowserViewController` no longer implement
+  `Clone`, which only retained the same mutable framework object.
 - **Breaking (raw FFI):** `mpc_advertiser_create`, `mpc_browser_create`,
-  `mpc_advertiser_assistant_create` and
-  `mpc_browser_view_controller_create_with_service_type` take an error
-  out-pointer; the `mpc_*_clear_delegate` functions take the owner's
-  context; `mpc_*_set_delegate` and `mpc_*_stream_subscribe` take context
+  `mpc_advertiser_assistant_create`,
+  `mpc_browser_view_controller_create_with_service_type` and
+  `mpc_browser_view_controller_create_with_browser` take an error
+  out-pointer; `mpc_session_create_with_identity(_handles)` take the
+  certificate verifier, its context and a release callback;
+  `mpc_session_set_delegate` lost its certificate callback; the
+  `mpc_*_clear_delegate` functions take the owner's context;
+  `mpc_*_set_delegate` and `mpc_*_stream_subscribe` take context
   retain/release callbacks.
+- `PeerId` and `SecurityIdentityItem` are `Send` and `Sync`; both wrap
+  immutable objects.
 - Requires `doom-fish-utils` `>=0.4.1, <0.5`.
 - `rust-version` is now 1.82 (was 1.76).
 
 ### Added
 
-- `async_api::CertificateHandle` with `accept()` and `reject()`.
+- `CertificatePolicy` and `CertificateRequest`.
+- `MultipeerError::MainThreadRequired`.
 - `EncryptionPreference` implements `Default`, returning `Required`.
 
 ## [0.4.1] - 2026-05-20
