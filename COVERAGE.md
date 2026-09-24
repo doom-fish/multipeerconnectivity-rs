@@ -35,7 +35,7 @@ Re-checked on 2026-09-23 against the MacOSX26.5 and MacOSX27.0 SDK headers. The 
 | `session:didReceiveStream:withName:fromPeer:` | ✅ implemented | `SessionDelegate::on_stream` + `InputStream` |
 | `session:didStartReceivingResourceWithName:fromPeer:withProgress:` | ✅ implemented | `SessionDelegate::on_resource_started` + `ResourceTransfer` |
 | `session:didFinishReceivingResourceWithName:fromPeer:atURL:withError:` | ✅ implemented | `SessionDelegate::on_resource_finished` |
-| `session:didReceiveCertificate:fromPeer:certificateHandler:` | ✅ implemented | `SessionDelegate::on_certificate`; `async_api::SessionEvent::CertificateReceived` with `CertificateHandle` (reject unless accepted) |
+| `session:didReceiveCertificate:fromPeer:certificateHandler:` | ✅ implemented | `CertificatePolicy` (required by every `Session` constructor) and `CertificateRequest`; applies whichever delegate is installed |
 | `nearbyConnectionDataForPeer:withCompletionHandler:` | ✅ implemented | `Session::nearby_connection_data_for_peer` |
 | `connectPeer:withNearbyConnectionData:` | ✅ implemented | `Session::connect_peer` |
 | `cancelConnectPeer:` | ✅ implemented | `Session::cancel_connect_peer` |

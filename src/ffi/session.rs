@@ -8,8 +8,8 @@ pub type SessionResourceStartCallback =
     unsafe extern "C" fn(*mut c_void, *mut c_void, *const c_char, *mut c_void);
 pub type SessionResourceFinishCallback =
     unsafe extern "C" fn(*mut c_void, *mut c_void, *const c_char, *const c_char, *mut c_void);
-pub type SessionCertificateCallback =
-    unsafe extern "C" fn(*mut c_void, *mut c_void, *mut c_void, usize) -> bool;
+pub type CertificateVerifierCallback =
+    unsafe extern "C" fn(*mut c_void, *mut c_void, *mut c_void, usize, *mut c_void);
 pub type ResourceSendCompletionCallback = unsafe extern "C" fn(*mut c_void, *mut c_void);
 
 extern "C" {
@@ -18,15 +18,20 @@ extern "C" {
         identity_items: *const *mut c_void,
         identity_count: usize,
         encryption_preference: i32,
-        error_out: *mut *mut c_void,
+        verifier: Option<CertificateVerifierCallback>,
+        verifier_context: *mut c_void,
+        verifier_release: Option<crate::ffi::core::ContextRetainCallback>,
     ) -> *mut c_void;
     pub fn mpc_session_create_with_identity_handles(
         peer: *mut c_void,
         identity_items: *const *mut c_void,
         identity_count: usize,
         encryption_preference: i32,
-        error_out: *mut *mut c_void,
+        verifier: Option<CertificateVerifierCallback>,
+        verifier_context: *mut c_void,
+        verifier_release: Option<crate::ffi::core::ContextRetainCallback>,
     ) -> *mut c_void;
+    pub fn mpc_certificate_handle_respond(handle: *mut c_void, accept: bool);
     pub fn mpc_session_copy_my_peer(session: *mut c_void) -> *mut c_void;
     pub fn mpc_session_copy_security_identity(
         session: *mut c_void,
@@ -109,7 +114,6 @@ extern "C" {
         on_stream: Option<SessionStreamCallback>,
         on_resource_started: Option<SessionResourceStartCallback>,
         on_resource_finished: Option<SessionResourceFinishCallback>,
-        on_certificate: Option<SessionCertificateCallback>,
         context_retain: crate::ffi::core::ContextRetainCallback,
         context_release: crate::ffi::core::ContextRetainCallback,
     );

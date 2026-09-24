@@ -5,14 +5,19 @@ use multipeerconnectivity::async_api::{
     AdvertiserEventStream, BrowserEventStream, InvitationHandle, SessionEventStream,
 };
 use multipeerconnectivity::{
-    EncryptionPreference, NearbyServiceAdvertiser, NearbyServiceBrowser, PeerId, Session,
+    CertificatePolicy, CertificateRequest, EncryptionPreference, NearbyServiceAdvertiser,
+    NearbyServiceBrowser, PeerId, Session,
 };
 
 #[test]
 fn session_stream_subscribe_and_drop() {
     let peer = PeerId::new("test-session-stream").expect("peer creation must succeed");
-    let session =
-        Session::new(&peer, EncryptionPreference::Required).expect("session creation must succeed");
+    let session = Session::new(
+        &peer,
+        EncryptionPreference::Required,
+        CertificatePolicy::Verify(Box::new(CertificateRequest::reject)),
+    )
+    .expect("session creation must succeed");
     let stream = SessionEventStream::subscribe_default(&session);
     assert!(!stream.is_closed(), "stream must be open after subscribe");
     assert_eq!(stream.buffered_count(), 0, "no events on idle stream");
@@ -23,8 +28,12 @@ fn session_stream_subscribe_and_drop() {
 #[test]
 fn session_stream_closes_on_drop() {
     let peer = PeerId::new("test-session-close").expect("peer creation must succeed");
-    let session =
-        Session::new(&peer, EncryptionPreference::Required).expect("session creation must succeed");
+    let session = Session::new(
+        &peer,
+        EncryptionPreference::Required,
+        CertificatePolicy::Verify(Box::new(CertificateRequest::reject)),
+    )
+    .expect("session creation must succeed");
     let stream = SessionEventStream::subscribe_default(&session);
     drop(stream);
 }
@@ -32,8 +41,12 @@ fn session_stream_closes_on_drop() {
 #[test]
 fn session_stream_custom_capacity() {
     let peer = PeerId::new("test-session-cap").expect("peer creation must succeed");
-    let session =
-        Session::new(&peer, EncryptionPreference::Required).expect("session creation must succeed");
+    let session = Session::new(
+        &peer,
+        EncryptionPreference::Required,
+        CertificatePolicy::Verify(Box::new(CertificateRequest::reject)),
+    )
+    .expect("session creation must succeed");
     let stream = SessionEventStream::subscribe(&session, 128);
     assert!(!stream.is_closed());
     drop(stream);

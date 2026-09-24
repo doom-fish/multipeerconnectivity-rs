@@ -5,12 +5,18 @@
 #[cfg(feature = "async")]
 use multipeerconnectivity::async_api::SessionEventStream;
 #[cfg(feature = "async")]
-use multipeerconnectivity::{EncryptionPreference, PeerId, Session};
+use multipeerconnectivity::{
+    CertificatePolicy, CertificateRequest, EncryptionPreference, PeerId, Session,
+};
 
 #[cfg(feature = "async")]
 fn main() -> multipeerconnectivity::Result<()> {
     let peer = PeerId::new("async-session-example")?;
-    let session = Session::new(&peer, EncryptionPreference::Required)?;
+    let session = Session::new(
+        &peer,
+        EncryptionPreference::Required,
+        CertificatePolicy::Verify(Box::new(CertificateRequest::reject)),
+    )?;
     let stream = SessionEventStream::subscribe_default(&session);
 
     println!(

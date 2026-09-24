@@ -30,9 +30,20 @@ Leave out `features` if you don't need the async event streams.
 ```rust,no_run
 use multipeerconnectivity::prelude::*;
 
+# fn is_trusted(_peer: &PeerId, _items: &[SecurityIdentityItem]) -> bool { false }
 fn main() -> Result<()> {
     let peer = PeerId::new("doom-fish-demo")?;
-    let session = Session::new(&peer, EncryptionPreference::Required)?;
+    let session = Session::new(
+        &peer,
+        EncryptionPreference::Required,
+        CertificatePolicy::Verify(Box::new(|request| {
+            if is_trusted(request.peer(), request.items()) {
+                request.accept();
+            } else {
+                request.reject();
+            }
+        })),
+    )?;
     let browser = NearbyServiceBrowser::new(&peer, "doom-chat")?;
 
     println!("local peer = {}", peer.display_name());
@@ -44,7 +55,11 @@ fn main() -> Result<()> {
 
 ## Encryption
 
-Create sessions with `EncryptionPreference::Required`, which is also `EncryptionPreference::default()`. `Optional` accepts unencrypted connections, so a nearby attacker can downgrade the session to plaintext, and `None` turns encryption off. Peers that use `None` can't join a `Required` session. Encryption alone doesn't authenticate peers; see the certificate notes below.
+Create sessions with `EncryptionPreference::Required`, which is also `EncryptionPreference::default()`. `Optional` accepts unencrypted connections, so a nearby attacker can downgrade the session to plaintext, and `None` turns encryption off. Peers that use `None` can't join a `Required` session. Encryption alone doesn't authenticate peers; see [Certificates](#certificates).
+
+## Certificates
+
+Every session is created with an explicit `CertificatePolicy`. With `CertificatePolicy::Verify`, each connecting peer's identity reaches your verifier as a `CertificateRequest`; the peer connects only after `accept()`, and `reject()` or dropping the request refuses it. The request is `Send`, so it can be decided later on another thread or task. `CertificatePolicy::AcceptAll` admits every peer; the framework does no validation of its own. The policy governs every delegate the session has: `set_callbacks` delegates, event streams, and a session with no callbacks at all. Peers without a security identity arrive with no certificate items.
 
 ## Async API
 
@@ -53,12 +68,18 @@ Enable the optional `async` Cargo feature to access executor-agnostic event stre
 ```rust
 # #[cfg(feature = "async")]
 # {
-use multipeerconnectivity::{EncryptionPreference, PeerId, Session};
+use multipeerconnectivity::{
+    CertificatePolicy, CertificateRequest, EncryptionPreference, PeerId, Session,
+};
 use multipeerconnectivity::async_api::SessionEventStream;
 
 # fn demo() -> multipeerconnectivity::Result<()> {
 let peer = PeerId::new("async-demo")?;
-let session = Session::new(&peer, EncryptionPreference::Required)?;
+let session = Session::new(
+    &peer,
+    EncryptionPreference::Required,
+    CertificatePolicy::Verify(Box::new(CertificateRequest::reject)),
+)?;
 let stream = SessionEventStream::subscribe_default(&session);
 assert!(!stream.is_closed());
 # Ok(())
@@ -69,8 +90,6 @@ assert!(!stream.is_closed());
 The feature adds `SessionEventStream`, `BrowserEventStream`, and `AdvertiserEventStream`. Each stream unsubscribes automatically when dropped.
 
 Each object has a single delegate, so subscribing a stream takes over from the current one. Dropping the stream hands the delegate back to the one it replaced (a `set_callbacks` delegate or an older stream) if that one is still active, and it never detaches a delegate that was installed after the stream. Likewise `clear_delegate` only removes the delegate that its own handle installed.
-
-`SessionEventStream` never accepts a peer on its own. Each `SessionEvent::CertificateReceived` carries a `CertificateHandle`, and the peer can connect only after you call `accept()` on it. Calling `reject()`, dropping the handle, or dropping the event unread (including when the stream is dropped or its buffer overflows) refuses the peer. The framework does not validate certificates, so check them before accepting. Peers without a security identity arrive with no certificate items and still need an explicit `accept()`.
 
 Async examples:
 
@@ -83,7 +102,7 @@ cargo run --example 10_async_advertiser_stream --features async
 ## Covered areas
 
 - `MCPeerID` creation, display name access, and `NSSecureCoding` archive/unarchive helpers
-- `MCSession` creation, connected-peer inspection, send/resource/stream helpers, custom discovery, and delegate callbacks for state/data/stream/resource/certificate events
+- `MCSession` creation with an explicit certificate policy, connected-peer inspection, send/resource/stream helpers, custom discovery, and delegate callbacks for state/data/stream/resource events
 - `MCNearbyServiceAdvertiser` creation, property access, invitation handling, and startup-failure callbacks
 - `MCNearbyServiceBrowser` creation, property access, invitations, and startup-failure callbacks
 - `MCAdvertiserAssistant` construction, property access, start/stop, and invitation presentation callbacks
@@ -94,8 +113,6 @@ cargo run --example 10_async_advertiser_stream --features async
 ## Delegate callbacks
 
 `MCSession`, `MCNearbyServiceBrowser`, `MCNearbyServiceAdvertiser`, `MCAdvertiserAssistant`, and `MCBrowserViewController` all use Swift-side delegate objects that call back into Rust via function pointers + refcon. The safe Rust API wraps that in builder-style delegate structs such as `SessionDelegate` and `BrowserViewControllerDelegate`.
-
-A `SessionDelegate` without `on_certificate` leaves the decision to the framework, which accepts every peer certificate without validating it. Register `on_certificate` and return `false` for peers you don't trust.
 
 ## Examples
 

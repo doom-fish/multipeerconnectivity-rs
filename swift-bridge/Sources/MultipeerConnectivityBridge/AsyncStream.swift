@@ -20,7 +20,6 @@ private let bridgeDelegateLock = NSLock()
 // 2 = StreamReceived     payload: MpcSessionStreamPayload
 // 3 = ResourceStarted    payload: MpcSessionResourceStartPayload
 // 4 = ResourceFinished   payload: MpcSessionResourceFinishPayload
-// 5 = CertificateReceived  payload: MpcSessionCertPayload
 
 private struct MpcSessionStatePayload {
     var peerPtr: UnsafeMutableRawPointer?
@@ -50,32 +49,6 @@ private struct MpcSessionResourceFinishPayload {
     var name: UnsafePointer<CChar>?
     var urlPath: UnsafePointer<CChar>?
     var errorPtr: UnsafeMutableRawPointer?
-}
-
-private struct MpcSessionCertPayload {
-    var peerPtr: UnsafeMutableRawPointer?
-    var itemsPtr: UnsafeMutableRawPointer?
-    var count: Int
-    var handlerPtr: UnsafeMutableRawPointer?
-}
-
-final class MpcCertificateHandlerBox: NSObject {
-    private var handler: ((Bool) -> Void)?
-
-    init(handler: @escaping (Bool) -> Void) {
-        self.handler = handler
-    }
-
-    func invoke(_ accept: Bool) {
-        handler?(accept)
-        handler = nil
-    }
-}
-
-@_cdecl("mpc_certificate_handle_respond")
-public func mpc_certificate_handle_respond(_ handlePtr: UnsafeMutableRawPointer, _ accept: Bool) {
-    let box = Unmanaged<MpcCertificateHandlerBox>.fromOpaque(handlePtr).takeRetainedValue()
-    box.invoke(accept)
 }
 
 private final class MCSessionEventBridge: NSObject, MCSessionDelegate, MpcDelegateIdentity {
@@ -116,7 +89,7 @@ private final class MCSessionEventBridge: NSObject, MCSessionDelegate, MpcDelega
         if let previous = previous as? MCSessionEventBridge, !previous.isDetached {
             mcSession.delegate = previous
         } else {
-            mcSession.delegate = registeredSessionDelegate(for: mcSession)
+            mcSession.delegate = registeredSessionDelegate(for: mcSession) ?? certificatePolicy(for: mcSession)
         }
     }
 
@@ -213,27 +186,12 @@ private final class MCSessionEventBridge: NSObject, MCSessionDelegate, MpcDelega
         fromPeer peerID: MCPeerID,
         certificateHandler: @escaping (Bool) -> Void
     ) {
-        let values = (certificate as? [AnyObject]) ?? []
-        let bufferPtr: UnsafeMutablePointer<UnsafeMutableRawPointer?>?
-        if values.isEmpty {
-            bufferPtr = nil
-        } else {
-            bufferPtr = UnsafeMutablePointer<UnsafeMutableRawPointer?>.allocate(capacity: values.count)
-            for (index, item) in values.enumerated() {
-                bufferPtr?[index] = retainObject(item)
-            }
-        }
-        let handlerBox = MpcCertificateHandlerBox(handler: certificateHandler)
-        var payload = MpcSessionCertPayload(
-            peerPtr: retainObject(peerID),
-            itemsPtr: bufferPtr.map(UnsafeMutableRawPointer.init),
-            count: values.count,
-            handlerPtr: Unmanaged.passRetained(handlerBox).toOpaque()
+        decideCertificate(
+            for: session,
+            certificate: certificate,
+            fromPeer: peerID,
+            certificateHandler: certificateHandler
         )
-        withUnsafeBytes(of: &payload) { bytes in
-            onEvent(5, bytes.baseAddress, ctx)
-        }
-        bufferPtr?.deallocate()
     }
 }
 
@@ -258,27 +216,6 @@ public func mpc_session_stream_subscribe(
 @_cdecl("mpc_session_stream_unsubscribe")
 public func mpc_session_stream_unsubscribe(_ handle: UnsafeMutableRawPointer) {
     Unmanaged<MCSessionEventBridge>.fromOpaque(handle).takeRetainedValue().detach()
-}
-
-public typealias MpcCertificateDecisionCallback = @convention(c) (UnsafeMutableRawPointer?, Bool) -> Void
-
-@_cdecl("mpc_session_stream_deliver_certificate")
-public func mpc_session_stream_deliver_certificate(
-    _ handle: UnsafeMutableRawPointer,
-    _ peerPtr: UnsafeMutableRawPointer,
-    _ includeItem: Bool,
-    _ decision: MpcCertificateDecisionCallback,
-    _ decisionContext: UnsafeMutableRawPointer?
-) {
-    let bridge = Unmanaged<MCSessionEventBridge>.fromOpaque(handle).takeUnretainedValue()
-    let certificate: [Any]? = includeItem ? [NSObject()] : nil
-    bridge.session(
-        bridge.mcSession,
-        didReceiveCertificate: certificate,
-        fromPeer: peer(peerPtr)
-    ) { accepted in
-        decision(decisionContext, accepted)
-    }
 }
 
 // MARK: - MCNearbyServiceBrowser async event bridge
@@ -567,8 +504,6 @@ public func mpc_async_verify_ffi_layout() -> Bool {
         && MemoryLayout<MpcSessionResourceStartPayload>.alignment == 8
         && MemoryLayout<MpcSessionResourceFinishPayload>.stride == 32
         && MemoryLayout<MpcSessionResourceFinishPayload>.alignment == 8
-        && MemoryLayout<MpcSessionCertPayload>.stride == 32
-        && MemoryLayout<MpcSessionCertPayload>.alignment == 8
         && MemoryLayout<MpcBrowserFoundPayload>.stride == 16
         && MemoryLayout<MpcBrowserFoundPayload>.alignment == 8
         && MemoryLayout<MpcBrowserLostPayload>.stride == 8

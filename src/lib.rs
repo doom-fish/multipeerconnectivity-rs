@@ -27,9 +27,9 @@ pub use browser_view_controller::{BrowserViewController, BrowserViewControllerDe
 pub use error::{mc_error_domain, FrameworkError, MCErrorCode, MultipeerError, Result};
 pub use peer::PeerId;
 pub use session::{
-    session_maximum_number_of_peers, session_minimum_number_of_peers, EncryptionPreference,
-    InputStream, OutputStream, ResourceTransfer, SecurityIdentityItem, Session, SessionDelegate,
-    SessionSendDataMode, SessionState,
+    session_maximum_number_of_peers, session_minimum_number_of_peers, CertificatePolicy,
+    CertificateRequest, EncryptionPreference, InputStream, OutputStream, ResourceTransfer,
+    SecurityIdentityItem, Session, SessionDelegate, SessionSendDataMode, SessionState,
 };
 
 /// Re-exports the main `MultipeerConnectivity` wrapper types and helpers.
@@ -37,10 +37,10 @@ pub mod prelude {
     pub use crate::{
         mc_error_domain, session_maximum_number_of_peers, session_minimum_number_of_peers,
         AdvertiserAssistant, AdvertiserAssistantDelegate, BrowserViewController,
-        BrowserViewControllerDelegate, EncryptionPreference, FrameworkError, InputStream,
-        InvitationResponse, MCErrorCode, MultipeerError, NearbyServiceAdvertiser,
-        NearbyServiceAdvertiserDelegate, NearbyServiceBrowser, NearbyServiceBrowserDelegate,
-        OutputStream, PeerId, ResourceTransfer, Result, SecurityIdentityItem, Session,
-        SessionDelegate, SessionSendDataMode, SessionState,
+        BrowserViewControllerDelegate, CertificatePolicy, CertificateRequest, EncryptionPreference,
+        FrameworkError, InputStream, InvitationResponse, MCErrorCode, MultipeerError,
+        NearbyServiceAdvertiser, NearbyServiceAdvertiserDelegate, NearbyServiceBrowser,
+        NearbyServiceBrowserDelegate, OutputStream, PeerId, ResourceTransfer, Result,
+        SecurityIdentityItem, Session, SessionDelegate, SessionSendDataMode, SessionState,
     };
 }

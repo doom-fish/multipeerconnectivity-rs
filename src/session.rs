@@ -9,7 +9,7 @@ use core::ptr::{self, NonNull};
 use std::ffi::{CStr, CString};
 use std::fmt;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::{Mutex, PoisonError};
 
 use doom_fish_utils::panic_safe::catch_user_panic;
 
@@ -100,7 +100,8 @@ type SessionStreamHandler = dyn FnMut(PeerId, String, InputStream) + Send;
 type SessionResourceStartedHandler = dyn FnMut(PeerId, String, ResourceTransfer) + Send;
 type SessionResourceFinishedHandler =
     dyn FnMut(PeerId, String, Option<PathBuf>, Option<FrameworkError>) + Send;
-type SessionCertificateHandler = dyn FnMut(PeerId, Vec<SecurityIdentityItem>) -> bool + Send;
+type CertificateVerifier = dyn FnMut(CertificateRequest) + Send;
+type VerifierState = Mutex<Box<CertificateVerifier>>;
 type ResourceSendCompletionHandler = dyn FnOnce(Option<FrameworkError>) + Send;
 
 /// Wraps a `MultipeerConnectivity` security-identity item.
@@ -133,10 +134,94 @@ impl Drop for SecurityIdentityItem {
     }
 }
 
+unsafe impl Send for SecurityIdentityItem {}
+unsafe impl Sync for SecurityIdentityItem {}
+
 impl fmt::Debug for SecurityIdentityItem {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("SecurityIdentityItem")
             .finish_non_exhaustive()
+    }
+}
+
+pub enum CertificatePolicy {
+    AcceptAll,
+    Verify(Box<CertificateVerifier>),
+}
+
+impl CertificatePolicy {
+    fn into_raw(
+        self,
+    ) -> (
+        Option<ffi::session::CertificateVerifierCallback>,
+        *mut c_void,
+    ) {
+        match self {
+            Self::AcceptAll => (None, ptr::null_mut()),
+            Self::Verify(verifier) => (
+                Some(certificate_verifier_trampoline),
+                Box::into_raw(Box::new(Mutex::new(verifier))).cast(),
+            ),
+        }
+    }
+}
+
+impl fmt::Debug for CertificatePolicy {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::AcceptAll => f.write_str("AcceptAll"),
+            Self::Verify(_) => f.write_str("Verify(..)"),
+        }
+    }
+}
+
+pub struct CertificateRequest {
+    peer: PeerId,
+    items: Vec<SecurityIdentityItem>,
+    decision: Option<NonNull<c_void>>,
+}
+
+impl CertificateRequest {
+    #[must_use]
+    pub const fn peer(&self) -> &PeerId {
+        &self.peer
+    }
+
+    #[must_use]
+    pub fn items(&self) -> &[SecurityIdentityItem] {
+        &self.items
+    }
+
+    pub fn accept(mut self) {
+        if let Some(decision) = self.decision.take() {
+            unsafe { ffi::session::mpc_certificate_handle_respond(decision.as_ptr(), true) };
+        }
+    }
+
+    pub fn reject(mut self) {
+        if let Some(decision) = self.decision.take() {
+            unsafe { ffi::session::mpc_certificate_handle_respond(decision.as_ptr(), false) };
+        }
+    }
+}
+
+impl Drop for CertificateRequest {
+    fn drop(&mut self) {
+        if let Some(decision) = self.decision.take() {
+            unsafe { ffi::session::mpc_certificate_handle_respond(decision.as_ptr(), false) };
+        }
+    }
+}
+
+unsafe impl Send for CertificateRequest {}
+
+impl fmt::Debug for CertificateRequest {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("CertificateRequest")
+            .field("peer", &self.peer)
+            .field("items", &self.items.len())
+            .field("pending", &self.decision.is_some())
+            .finish()
     }
 }
 
@@ -147,7 +232,6 @@ pub struct SessionDelegate {
     on_stream: Option<Box<SessionStreamHandler>>,
     on_resource_started: Option<Box<SessionResourceStartedHandler>>,
     on_resource_finished: Option<Box<SessionResourceFinishedHandler>>,
-    on_certificate: Option<Box<SessionCertificateHandler>>,
 }
 
 impl SessionDelegate {
@@ -160,7 +244,6 @@ impl SessionDelegate {
             on_stream: None,
             on_resource_started: None,
             on_resource_finished: None,
-            on_certificate: None,
         }
     }
 
@@ -213,16 +296,6 @@ impl SessionDelegate {
         self.on_resource_finished = Some(Box::new(handler));
         self
     }
-
-    #[must_use]
-    /// Registers a callback for `MultipeerConnectivity` certificate handling.
-    pub fn on_certificate<F>(mut self, handler: F) -> Self
-    where
-        F: FnMut(PeerId, Vec<SecurityIdentityItem>) -> bool + Send + 'static,
-    {
-        self.on_certificate = Some(Box::new(handler));
-        self
-    }
 }
 
 impl Default for SessionDelegate {
@@ -262,8 +335,12 @@ pub struct Session {
 
 impl Session {
     /// Creates a `MultipeerConnectivity` session for the local peer.
-    pub fn new(peer: &PeerId, encryption_preference: EncryptionPreference) -> Result<Self> {
-        unsafe { Self::with_security_identity(peer, None, encryption_preference) }
+    pub fn new(
+        peer: &PeerId,
+        encryption_preference: EncryptionPreference,
+        certificates: CertificatePolicy,
+    ) -> Result<Self> {
+        unsafe { Self::with_security_identity(peer, None, encryption_preference, certificates) }
     }
 
     /// Creates a `MultipeerConnectivity` session from security-identity wrappers.
@@ -271,12 +348,13 @@ impl Session {
         peer: &PeerId,
         security_identity: &[SecurityIdentityItem],
         encryption_preference: EncryptionPreference,
+        certificates: CertificatePolicy,
     ) -> Result<Self> {
         let handles: Vec<*mut c_void> = security_identity
             .iter()
             .map(SecurityIdentityItem::as_ptr)
             .collect();
-        let mut error = ptr::null_mut();
+        let (verifier, verifier_context) = certificates.into_raw();
         let raw = unsafe {
             ffi::session::mpc_session_create_with_identity_handles(
                 peer.as_ptr(),
@@ -287,14 +365,12 @@ impl Session {
                 },
                 handles.len(),
                 encryption_preference.as_raw(),
-                &raw mut error,
+                verifier,
+                verifier_context,
+                Some(certificate_verifier_release),
             )
         };
-        let raw = NonNull::new(raw).ok_or_else(|| take_error(error))?;
-        Ok(Self {
-            raw,
-            delegate_state: None,
-        })
+        Self::created(raw)
     }
 
     /// Creates a `MultipeerConnectivity` session from raw security-identity handles.
@@ -302,18 +378,26 @@ impl Session {
         peer: &PeerId,
         security_identity: Option<&[*mut c_void]>,
         encryption_preference: EncryptionPreference,
+        certificates: CertificatePolicy,
     ) -> Result<Self> {
-        let mut error = ptr::null_mut();
         let (identity_ptr, identity_len) =
             security_identity.map_or((ptr::null(), 0), |items| (items.as_ptr(), items.len()));
+        let (verifier, verifier_context) = certificates.into_raw();
         let raw = ffi::session::mpc_session_create_with_identity(
             peer.as_ptr(),
             identity_ptr,
             identity_len,
             encryption_preference.as_raw(),
-            &raw mut error,
+            verifier,
+            verifier_context,
+            Some(certificate_verifier_release),
         );
-        let raw = NonNull::new(raw).ok_or_else(|| take_error(error))?;
+        Self::created(raw)
+    }
+
+    fn created(raw: *mut c_void) -> Result<Self> {
+        let raw = NonNull::new(raw)
+            .ok_or_else(|| MultipeerError::OperationFailed("failed to create MCSession".into()))?;
         Ok(Self {
             raw,
             delegate_state: None,
@@ -556,7 +640,6 @@ impl Session {
     /// Installs typed `MultipeerConnectivity` session callbacks.
     pub fn set_callbacks(&mut self, callbacks: SessionDelegate) {
         self.clear_delegate();
-        let has_certificate = callbacks.on_certificate.is_some();
         let state = Box::new(SessionDelegateState {
             callbacks: Mutex::new(callbacks),
             ref_count: crate::refcount::RefCount::new(),
@@ -571,11 +654,6 @@ impl Session {
                 Some(session_stream_trampoline),
                 Some(session_resource_start_trampoline),
                 Some(session_resource_finish_trampoline),
-                if has_certificate {
-                    Some(session_certificate_trampoline)
-                } else {
-                    None
-                },
                 session_context_retain,
                 session_context_release,
             );
@@ -598,13 +676,6 @@ impl Session {
 
     pub(crate) const fn as_ptr(&self) -> *mut c_void {
         self.raw.as_ptr()
-    }
-}
-
-impl Clone for Session {
-    fn clone(&self) -> Self {
-        let raw = unsafe { ffi::core::mpc_object_retain(self.raw.as_ptr()) };
-        unsafe { Self::from_owned_raw(raw) }
     }
 }
 
@@ -944,29 +1015,244 @@ unsafe extern "C" fn session_resource_finish_trampoline(
     }
 }
 
-unsafe extern "C" fn session_certificate_trampoline(
+unsafe extern "C" fn certificate_verifier_trampoline(
     context: *mut c_void,
     peer: *mut c_void,
     certificate_items: *mut c_void,
     certificate_count: usize,
-) -> bool {
-    let Some(context) = NonNull::new(context.cast::<SessionDelegateState>()) else {
-        if !certificate_items.is_null() {
-            unsafe { ffi::core::mpc_ptr_array_free(certificate_items) };
-        }
-        return false;
-    };
-    let peer = unsafe { PeerId::from_owned_raw(peer) };
-    let certificate = take_handle_array(certificate_items, certificate_count, |raw| unsafe {
-        SecurityIdentityItem::from_owned_raw(raw)
+    decision: *mut c_void,
+) {
+    catch_user_panic("certificate_verifier_trampoline", || {
+        let items = if certificate_items.is_null() || certificate_count == 0 {
+            Vec::new()
+        } else {
+            unsafe {
+                std::slice::from_raw_parts(
+                    certificate_items.cast::<*mut c_void>(),
+                    certificate_count,
+                )
+            }
+            .iter()
+            .map(|&raw| unsafe { SecurityIdentityItem::from_owned_raw(raw) })
+            .collect()
+        };
+        let request = CertificateRequest {
+            peer: unsafe { PeerId::from_owned_raw(peer) },
+            items,
+            decision: NonNull::new(decision),
+        };
+        let Some(state) = NonNull::new(context.cast::<VerifierState>()) else {
+            return;
+        };
+        let mut verifier = unsafe { state.as_ref() }
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        verifier(request);
     });
-    let mut result = false;
-    if let Ok(mut callbacks) = unsafe { context.as_ref() }.callbacks.lock() {
-        if let Some(callback) = callbacks.on_certificate.as_mut() {
-            catch_user_panic("session_certificate_trampoline", || {
-                result = callback(peer, certificate);
-            });
+}
+
+unsafe extern "C" fn certificate_verifier_release(context: *mut c_void) {
+    if context.is_null() {
+        return;
+    }
+    catch_user_panic("certificate_verifier_release", || {
+        drop(unsafe { Box::from_raw(context.cast::<VerifierState>()) });
+    });
+}
+
+#[cfg(test)]
+pub(crate) mod test_support {
+    use core::ffi::c_void;
+    use std::sync::atomic::{AtomicI32, Ordering};
+
+    use super::{CertificatePolicy, EncryptionPreference, Session};
+    use crate::peer::PeerId;
+
+    extern "C" {
+        fn mpc_session_deliver_certificate(
+            session: *mut c_void,
+            peer: *mut c_void,
+            include_item: bool,
+            decision: unsafe extern "C" fn(*mut c_void, bool),
+            decision_context: *mut c_void,
+        );
+        fn mpc_delegate_identity(object: *mut c_void) -> *mut c_void;
+    }
+
+    pub const PENDING: i32 = -1;
+    pub const REJECTED: i32 = 0;
+    pub const ACCEPTED: i32 = 1;
+
+    unsafe extern "C" fn record_decision(context: *mut c_void, accepted: bool) {
+        let decision = unsafe { &*context.cast::<AtomicI32>() };
+        decision.store(i32::from(accepted), Ordering::SeqCst);
+    }
+
+    pub fn deliver_certificate(
+        session: &Session,
+        peer: &PeerId,
+        include_item: bool,
+        decision: &AtomicI32,
+    ) {
+        unsafe {
+            mpc_session_deliver_certificate(
+                session.as_ptr(),
+                peer.as_ptr(),
+                include_item,
+                record_decision,
+                core::ptr::from_ref(decision).cast_mut().cast(),
+            );
         }
     }
-    result
+
+    pub fn delegate_of(object: *mut c_void) -> *mut c_void {
+        unsafe { mpc_delegate_identity(object) }
+    }
+
+    pub fn session_with(name: &str, certificates: CertificatePolicy) -> Session {
+        let peer = PeerId::new(name).expect("peer");
+        Session::new(&peer, EncryptionPreference::Required, certificates).expect("session")
+    }
+
+    pub fn rejecting_session(name: &str) -> Session {
+        session_with(
+            name,
+            CertificatePolicy::Verify(Box::new(super::CertificateRequest::reject)),
+        )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::atomic::{AtomicI32, Ordering};
+    use std::sync::{mpsc, Arc, Mutex};
+
+    use super::test_support::{
+        delegate_of, deliver_certificate, rejecting_session, session_with, ACCEPTED, PENDING,
+        REJECTED,
+    };
+    use super::{CertificatePolicy, CertificateRequest, SessionDelegate};
+    use crate::peer::PeerId;
+
+    fn remote() -> PeerId {
+        PeerId::new("cert-remote").expect("peer")
+    }
+
+    #[test]
+    fn accept_all_is_an_explicit_policy() {
+        let decision = AtomicI32::new(PENDING);
+        let session = session_with("policy-accept-all", CertificatePolicy::AcceptAll);
+        assert!(!delegate_of(session.as_ptr()).is_null());
+
+        deliver_certificate(&session, &remote(), true, &decision);
+        assert_eq!(decision.load(Ordering::SeqCst), ACCEPTED);
+    }
+
+    #[test]
+    fn the_verifier_sees_the_peer_and_items_and_decides() {
+        let accepted = AtomicI32::new(PENDING);
+        let rejected = AtomicI32::new(PENDING);
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let log = Arc::clone(&seen);
+        let session = session_with(
+            "policy-verify",
+            CertificatePolicy::Verify(Box::new(move |request: CertificateRequest| {
+                log.lock()
+                    .expect("log")
+                    .push((request.peer().display_name(), request.items().len()));
+                if request.items().is_empty() {
+                    request.reject();
+                } else {
+                    request.accept();
+                }
+            })),
+        );
+
+        deliver_certificate(&session, &remote(), true, &accepted);
+        deliver_certificate(&session, &remote(), false, &rejected);
+        assert_eq!(accepted.load(Ordering::SeqCst), ACCEPTED);
+        assert_eq!(rejected.load(Ordering::SeqCst), REJECTED);
+        assert_eq!(
+            *seen.lock().expect("log"),
+            vec![("cert-remote".to_owned(), 1), ("cert-remote".to_owned(), 0)]
+        );
+    }
+
+    #[test]
+    fn dropping_a_request_rejects_the_peer() {
+        let decision = AtomicI32::new(PENDING);
+        let session = session_with(
+            "policy-drop",
+            CertificatePolicy::Verify(Box::new(drop)),
+        );
+        deliver_certificate(&session, &remote(), false, &decision);
+        assert_eq!(decision.load(Ordering::SeqCst), REJECTED);
+    }
+
+    #[test]
+    fn a_panicking_verifier_rejects_the_peer() {
+        let decision = AtomicI32::new(PENDING);
+        let session = session_with(
+            "policy-panic",
+            CertificatePolicy::Verify(Box::new(|request| {
+                assert!(request.items().len() > 1, "verifier panics");
+            })),
+        );
+        deliver_certificate(&session, &remote(), true, &decision);
+        assert_eq!(decision.load(Ordering::SeqCst), REJECTED);
+    }
+
+    #[test]
+    fn a_request_can_be_decided_later_on_another_thread() {
+        let decision = AtomicI32::new(PENDING);
+        let (tx, rx) = mpsc::channel::<CertificateRequest>();
+        let session = session_with(
+            "policy-deferred",
+            CertificatePolicy::Verify(Box::new(move |request| {
+                tx.send(request).expect("send request");
+            })),
+        );
+
+        deliver_certificate(&session, &remote(), true, &decision);
+        assert_eq!(decision.load(Ordering::SeqCst), PENDING);
+        let request = rx.recv().expect("request");
+        std::thread::spawn(move || request.accept())
+            .join()
+            .expect("decider thread");
+        assert_eq!(decision.load(Ordering::SeqCst), ACCEPTED);
+    }
+
+    #[test]
+    fn set_callbacks_does_not_bypass_the_policy() {
+        let decision = AtomicI32::new(PENDING);
+        let mut session = rejecting_session("policy-sync-delegate");
+        let policy_delegate = delegate_of(session.as_ptr());
+        session.set_callbacks(SessionDelegate::new().on_state(|_peer, _state| {}));
+        assert_ne!(delegate_of(session.as_ptr()), policy_delegate);
+
+        deliver_certificate(&session, &remote(), true, &decision);
+        assert_eq!(decision.load(Ordering::SeqCst), REJECTED);
+
+        session.clear_delegate();
+        assert_eq!(delegate_of(session.as_ptr()), policy_delegate);
+        let after_clear = AtomicI32::new(PENDING);
+        deliver_certificate(&session, &remote(), true, &after_clear);
+        assert_eq!(after_clear.load(Ordering::SeqCst), REJECTED);
+    }
+
+    #[test]
+    fn dropping_the_session_releases_the_verifier() {
+        let probe = Arc::new(());
+        let captured = Arc::clone(&probe);
+        let session = session_with(
+            "policy-release",
+            CertificatePolicy::Verify(Box::new(move |request| {
+                let _ = &captured;
+                request.reject();
+            })),
+        );
+        assert_eq!(Arc::strong_count(&probe), 2);
+        drop(session);
+        assert_eq!(Arc::strong_count(&probe), 1);
+    }
 }

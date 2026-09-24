@@ -49,7 +49,7 @@ This audit enumerates Objective-C public surface members (methods, properties, e
 | `-session:didReceiveStream:withName:fromPeer:` | protocol method | `MCSession.h` | `SessionDelegate::on_stream`, `InputStream` |
 | `-session:didStartReceivingResourceWithName:fromPeer:withProgress:` | protocol method | `MCSession.h` | `SessionDelegate::on_resource_started`, `ResourceTransfer` |
 | `-session:didFinishReceivingResourceWithName:fromPeer:atURL:withError:` | protocol method | `MCSession.h` | `SessionDelegate::on_resource_finished` |
-| `-session:didReceiveCertificate:fromPeer:certificateHandler:` | protocol method | `MCSession.h` | `SessionDelegate::on_certificate` |
+| `-session:didReceiveCertificate:fromPeer:certificateHandler:` | protocol method | `MCSession.h` | `CertificatePolicy`, `CertificateRequest` |
 | `-nearbyConnectionDataForPeer:withCompletionHandler:` | method | `MCSession.h` | `Session::nearby_connection_data_for_peer` |
 | `-connectPeer:withNearbyConnectionData:` | method | `MCSession.h` | `Session::connect_peer` |
 | `-cancelConnectPeer:` | method | `MCSession.h` | `Session::cancel_connect_peer` |

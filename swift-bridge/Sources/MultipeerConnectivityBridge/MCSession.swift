@@ -26,18 +26,145 @@ private func encryptionPreference(_ rawValue: Int32) -> MCEncryptionPreference {
     }
 }
 
+public typealias MpcCertificateVerifierCallback = @convention(c) (
+    UnsafeMutableRawPointer?,
+    UnsafeMutableRawPointer?,
+    UnsafeMutableRawPointer?,
+    Int,
+    UnsafeMutableRawPointer?
+) -> Void
+
+final class MpcCertificateHandlerBox: NSObject {
+    private var handler: ((Bool) -> Void)?
+
+    init(handler: @escaping (Bool) -> Void) {
+        self.handler = handler
+    }
+
+    func invoke(_ accept: Bool) {
+        handler?(accept)
+        handler = nil
+    }
+}
+
+@_cdecl("mpc_certificate_handle_respond")
+public func mpc_certificate_handle_respond(_ handlePtr: UnsafeMutableRawPointer, _ accept: Bool) {
+    let box = Unmanaged<MpcCertificateHandlerBox>.fromOpaque(handlePtr).takeRetainedValue()
+    box.invoke(accept)
+}
+
+private var certificatePolicyKey: UInt8 = 0
+
+final class MpcCertificatePolicy: NSObject, MCSessionDelegate, MpcDelegateIdentity {
+    private let verifier: MpcCertificateVerifierCallback?
+    private let retention: ContextRetention
+
+    init(
+        verifier: MpcCertificateVerifierCallback?,
+        context: UnsafeMutableRawPointer?,
+        release: MpcContextRetainCallback?
+    ) {
+        self.verifier = verifier
+        self.retention = ContextRetention(context: context, retain: nil, release: release)
+    }
+
+    var delegateIdentity: UnsafeMutableRawPointer? {
+        Unmanaged.passUnretained(self).toOpaque()
+    }
+
+    func decide(
+        certificate: [Any]?,
+        fromPeer peerID: MCPeerID,
+        certificateHandler: @escaping (Bool) -> Void
+    ) {
+        guard let verifier else {
+            certificateHandler(true)
+            return
+        }
+        let values = (certificate as? [AnyObject]) ?? []
+        let buffer: UnsafeMutablePointer<UnsafeMutableRawPointer?>? = values.isEmpty
+            ? nil
+            : UnsafeMutablePointer<UnsafeMutableRawPointer?>.allocate(capacity: values.count)
+        for (index, item) in values.enumerated() {
+            buffer?[index] = retainObject(item)
+        }
+        let handlerBox = MpcCertificateHandlerBox(handler: certificateHandler)
+        verifier(
+            retention.context,
+            retainObject(peerID),
+            buffer.map(UnsafeMutableRawPointer.init),
+            values.count,
+            Unmanaged.passRetained(handlerBox).toOpaque()
+        )
+        buffer?.deallocate()
+    }
+
+    func session(_ session: MCSession, peer peerID: MCPeerID, didChange state: MCSessionState) {}
+
+    func session(_ session: MCSession, didReceive data: Data, fromPeer peerID: MCPeerID) {}
+
+    func session(
+        _ session: MCSession,
+        didReceive stream: InputStream,
+        withName streamName: String,
+        fromPeer peerID: MCPeerID
+    ) {}
+
+    func session(
+        _ session: MCSession,
+        didStartReceivingResourceWithName resourceName: String,
+        fromPeer peerID: MCPeerID,
+        with progress: Progress
+    ) {}
+
+    func session(
+        _ session: MCSession,
+        didFinishReceivingResourceWithName resourceName: String,
+        fromPeer peerID: MCPeerID,
+        at localURL: URL?,
+        withError error: Error?
+    ) {}
+
+    func session(
+        _ session: MCSession,
+        didReceiveCertificate certificate: [Any]?,
+        fromPeer peerID: MCPeerID,
+        certificateHandler: @escaping (Bool) -> Void
+    ) {
+        decide(certificate: certificate, fromPeer: peerID, certificateHandler: certificateHandler)
+    }
+}
+
+func certificatePolicy(for value: MCSession) -> MpcCertificatePolicy? {
+    objc_getAssociatedObject(value, &certificatePolicyKey) as? MpcCertificatePolicy
+}
+
+func decideCertificate(
+    for session: MCSession,
+    certificate: [Any]?,
+    fromPeer peerID: MCPeerID,
+    certificateHandler: @escaping (Bool) -> Void
+) {
+    guard let policy = certificatePolicy(for: session) else {
+        certificateHandler(false)
+        return
+    }
+    policy.decide(certificate: certificate, fromPeer: peerID, certificateHandler: certificateHandler)
+}
+
 private func makeSession(
     peerPtr: UnsafeMutableRawPointer,
     identity: [AnyObject]?,
     encryptionPreference rawValue: Int32,
-    errorOut: UnsafeMutablePointer<UnsafeMutableRawPointer?>?
+    policy: MpcCertificatePolicy
 ) -> UnsafeMutableRawPointer? {
-    _ = errorOut
     let value = MCSession(
         peer: peer(peerPtr),
         securityIdentity: identity,
         encryptionPreference: encryptionPreference(rawValue)
     )
+    objc_setAssociatedObject(value, &certificatePolicyKey, policy, .OBJC_ASSOCIATION_RETAIN)
+    value.delegate = policy
     return retainObject(value)
 }
 
@@ -47,13 +174,16 @@ public func mpc_session_create_with_identity(
     _ identityItems: UnsafePointer<UnsafeMutableRawPointer?>?,
     _ identityCount: Int,
     _ encryptionPreference: Int32,
-    _ errorOut: UnsafeMutablePointer<UnsafeMutableRawPointer?>?
+    _ verifier: MpcCertificateVerifierCallback?,
+    _ verifierContext: UnsafeMutableRawPointer?,
+    _ verifierRelease: MpcContextRetainCallback?
 ) -> UnsafeMutableRawPointer? {
-    makeSession(
+    let policy = MpcCertificatePolicy(verifier: verifier, context: verifierContext, release: verifierRelease)
+    return makeSession(
         peerPtr: peerPtr,
         identity: rawObjectArray(identityItems, count: identityCount),
         encryptionPreference: encryptionPreference,
-        errorOut: errorOut
+        policy: policy
     )
 }
 
@@ -63,14 +193,41 @@ public func mpc_session_create_with_identity_handles(
     _ identityItems: UnsafePointer<UnsafeMutableRawPointer?>?,
     _ identityCount: Int,
     _ encryptionPreference: Int32,
-    _ errorOut: UnsafeMutablePointer<UnsafeMutableRawPointer?>?
+    _ verifier: MpcCertificateVerifierCallback?,
+    _ verifierContext: UnsafeMutableRawPointer?,
+    _ verifierRelease: MpcContextRetainCallback?
 ) -> UnsafeMutableRawPointer? {
-    makeSession(
+    let policy = MpcCertificatePolicy(verifier: verifier, context: verifierContext, release: verifierRelease)
+    return makeSession(
         peerPtr: peerPtr,
         identity: boxedObjectArray(identityItems, count: identityCount),
         encryptionPreference: encryptionPreference,
-        errorOut: errorOut
+        policy: policy
     )
+}
+
+public typealias MpcCertificateDecisionCallback = @convention(c) (UnsafeMutableRawPointer?, Bool) -> Void
+
+@_cdecl("mpc_session_deliver_certificate")
+public func mpc_session_deliver_certificate(
+    _ sessionPtr: UnsafeMutableRawPointer,
+    _ peerPtr: UnsafeMutableRawPointer,
+    _ includeItem: Bool,
+    _ decision: MpcCertificateDecisionCallback,
+    _ decisionContext: UnsafeMutableRawPointer?
+) {
+    let value = session(sessionPtr)
+    let certificate: [Any]? = includeItem ? [NSObject()] : nil
+    let delivered: Void? = value.delegate?.session?(
+        value,
+        didReceiveCertificate: certificate,
+        fromPeer: peer(peerPtr)
+    ) { accepted in
+        decision(decisionContext, accepted)
+    }
+    if delivered == nil {
+        decision(decisionContext, true)
+    }
 }
 
 @_cdecl("mpc_session_copy_my_peer")
@@ -401,13 +558,6 @@ public typealias MpcSessionResourceFinishCallback = @convention(c) (
     UnsafeMutableRawPointer?
 ) -> Void
 
-public typealias MpcSessionCertificateCallback = @convention(c) (
-    UnsafeMutableRawPointer?,
-    UnsafeMutableRawPointer?,
-    UnsafeMutableRawPointer?,
-    Int
-) -> Bool
-
 private final class SessionDelegateBox: NSObject, MCSessionDelegate, MpcDelegateIdentity {
     let context: UnsafeMutableRawPointer?
     let retention: ContextRetention
@@ -416,7 +566,6 @@ private final class SessionDelegateBox: NSObject, MCSessionDelegate, MpcDelegate
     let streamCallback: MpcSessionStreamCallback?
     let resourceStartCallback: MpcSessionResourceStartCallback?
     let resourceFinishCallback: MpcSessionResourceFinishCallback?
-    let certificateCallback: MpcSessionCertificateCallback?
 
     init(
         context: UnsafeMutableRawPointer?,
@@ -425,7 +574,6 @@ private final class SessionDelegateBox: NSObject, MCSessionDelegate, MpcDelegate
         streamCallback: MpcSessionStreamCallback?,
         resourceStartCallback: MpcSessionResourceStartCallback?,
         resourceFinishCallback: MpcSessionResourceFinishCallback?,
-        certificateCallback: MpcSessionCertificateCallback?,
         contextRetain: MpcContextRetainCallback,
         contextRelease: MpcContextRetainCallback
     ) {
@@ -436,7 +584,6 @@ private final class SessionDelegateBox: NSObject, MCSessionDelegate, MpcDelegate
         self.streamCallback = streamCallback
         self.resourceStartCallback = resourceStartCallback
         self.resourceFinishCallback = resourceFinishCallback
-        self.certificateCallback = certificateCallback
     }
 
     var delegateIdentity: UnsafeMutableRawPointer? {
@@ -500,34 +647,12 @@ private final class SessionDelegateBox: NSObject, MCSessionDelegate, MpcDelegate
         fromPeer peerID: MCPeerID,
         certificateHandler: @escaping (Bool) -> Void
     ) {
-        guard let certificateCallback else {
-            certificateHandler(false)
-            return
-        }
-        let values = (certificate as? [AnyObject]) ?? []
-        let buffer: UnsafeMutablePointer<UnsafeMutableRawPointer?>?
-        if values.isEmpty {
-            buffer = nil
-        } else {
-            buffer = UnsafeMutablePointer<UnsafeMutableRawPointer?>.allocate(capacity: values.count)
-            for (index, item) in values.enumerated() {
-                buffer?[index] = retainObject(item)
-            }
-        }
-        let accepted = certificateCallback(
-            context,
-            retainObject(peerID),
-            buffer.map(UnsafeMutableRawPointer.init),
-            values.count
+        decideCertificate(
+            for: session,
+            certificate: certificate,
+            fromPeer: peerID,
+            certificateHandler: certificateHandler
         )
-        certificateHandler(accepted)
-    }
-
-    override func responds(to aSelector: Selector!) -> Bool {
-        if aSelector == #selector(session(_:didReceiveCertificate:fromPeer:certificateHandler:)) {
-            return certificateCallback != nil
-        }
-        return super.responds(to: aSelector)
     }
 }
 
@@ -549,7 +674,6 @@ public func mpc_session_set_delegate(
     _ streamCallback: MpcSessionStreamCallback?,
     _ resourceStartCallback: MpcSessionResourceStartCallback?,
     _ resourceFinishCallback: MpcSessionResourceFinishCallback?,
-    _ certificateCallback: MpcSessionCertificateCallback?,
     _ contextRetain: MpcContextRetainCallback,
     _ contextRelease: MpcContextRetainCallback
 ) {
@@ -561,7 +685,6 @@ public func mpc_session_set_delegate(
         streamCallback: streamCallback,
         resourceStartCallback: resourceStartCallback,
         resourceFinishCallback: resourceFinishCallback,
-        certificateCallback: certificateCallback,
         contextRetain: contextRetain,
         contextRelease: contextRelease
     )
@@ -582,6 +705,6 @@ public func mpc_session_clear_delegate(
     let removed = sessionDelegates[key]?.context == context ? sessionDelegates.removeValue(forKey: key) : nil
     sessionDelegatesLock.unlock()
     if let removed, value.delegate === removed {
-        value.delegate = nil
+        value.delegate = certificatePolicy(for: value)
     }
 }

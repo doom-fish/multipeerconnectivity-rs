@@ -101,6 +101,9 @@ impl PeerId {
     }
 }
 
+unsafe impl Send for PeerId {}
+unsafe impl Sync for PeerId {}
+
 impl Clone for PeerId {
     fn clone(&self) -> Self {
         let raw = unsafe { ffi::core::mpc_object_retain(self.raw.as_ptr()) };

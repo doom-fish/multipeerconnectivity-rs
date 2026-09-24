@@ -1,12 +1,16 @@
 use multipeerconnectivity::{
-    session_maximum_number_of_peers, session_minimum_number_of_peers, EncryptionPreference, PeerId,
-    Result, Session, SessionDelegate,
+    session_maximum_number_of_peers, session_minimum_number_of_peers, CertificatePolicy,
+    CertificateRequest, EncryptionPreference, PeerId, Result, Session, SessionDelegate,
 };
 
 #[test]
 fn session_exposes_properties_and_delegate_setup() -> Result<()> {
     let peer = PeerId::new("doom-fish-session")?;
-    let mut session = Session::new(&peer, EncryptionPreference::Required)?;
+    let mut session = Session::new(
+        &peer,
+        EncryptionPreference::Required,
+        CertificatePolicy::Verify(Box::new(CertificateRequest::reject)),
+    )?;
     assert_eq!(session.my_peer_id().display_name(), "doom-fish-session");
     assert_eq!(session.security_identity().len(), 0);
     assert_eq!(
@@ -20,8 +24,7 @@ fn session_exposes_properties_and_delegate_setup() -> Result<()> {
             .on_data(|_peer, _data| {})
             .on_stream(|_peer, _name, _stream| {})
             .on_resource_started(|_peer, _name, _transfer| {})
-            .on_resource_finished(|_peer, _name, _path, _error| {})
-            .on_certificate(|_peer, _items| true),
+            .on_resource_finished(|_peer, _name, _path, _error| {}),
     );
     session.clear_delegate();
     Ok(())
@@ -49,7 +52,7 @@ fn every_encryption_preference_round_trips() -> Result<()> {
         EncryptionPreference::Optional,
         EncryptionPreference::None,
     ] {
-        let session = Session::new(&peer, preference)?;
+        let session = Session::new(&peer, preference, CertificatePolicy::AcceptAll)?;
         assert_eq!(session.encryption_preference(), preference);
     }
     Ok(())

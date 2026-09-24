@@ -17,26 +17,29 @@
 //! # Quick start
 //!
 //! ```no_run
-//! use multipeerconnectivity::async_api::{SessionEvent, SessionEventStream};
-//! use multipeerconnectivity::{EncryptionPreference, PeerId, SecurityIdentityItem, Session};
+//! use multipeerconnectivity::async_api::SessionEventStream;
+//! use multipeerconnectivity::{
+//!     CertificatePolicy, EncryptionPreference, PeerId, SecurityIdentityItem, Session,
+//! };
 //!
 //! # fn is_trusted(_peer: &PeerId, _items: &[SecurityIdentityItem]) -> bool { false }
 //! # async fn run() -> multipeerconnectivity::Result<()> {
 //! let peer = PeerId::new("my-peer")?;
-//! let session = Session::new(&peer, EncryptionPreference::Required)?;
+//! let session = Session::new(
+//!     &peer,
+//!     EncryptionPreference::Required,
+//!     CertificatePolicy::Verify(Box::new(|request| {
+//!         if is_trusted(request.peer(), request.items()) {
+//!             request.accept();
+//!         } else {
+//!             request.reject();
+//!         }
+//!     })),
+//! )?;
 //! let stream = SessionEventStream::subscribe_default(&session);
 //!
 //! while let Some(event) = stream.next().await {
-//!     match event {
-//!         SessionEvent::CertificateReceived { peer, items, handle } => {
-//!             if is_trusted(&peer, &items) {
-//!                 handle.accept();
-//!             } else {
-//!                 handle.reject();
-//!             }
-//!         }
-//!         other => println!("session event: {other:?}"),
-//!     }
+//!     println!("session event: {event:?}");
 //! }
 //! # Ok(())
 //! # }
@@ -54,7 +57,7 @@ use crate::advertiser::NearbyServiceAdvertiser;
 use crate::browser::NearbyServiceBrowser;
 use crate::error::{take_framework_error, FrameworkError};
 use crate::peer::PeerId;
-use crate::session::{InputStream, ResourceTransfer, SecurityIdentityItem, Session, SessionState};
+use crate::session::{InputStream, ResourceTransfer, Session, SessionState};
 
 /// Default event buffer capacity for all stream types.
 pub const DEFAULT_CAPACITY: usize = 64;
@@ -92,7 +95,6 @@ extern "C" {
 
     fn mpc_invitation_handle_accept(handle: *mut c_void, session: *mut c_void);
     fn mpc_invitation_handle_decline(handle: *mut c_void);
-    fn mpc_certificate_handle_respond(handle: *mut c_void, accept: bool);
 
     /// Cross-language ABI check for the packed event payload structs. Returns
     /// `true` only if the Swift `MemoryLayout` matches the Rust layout asserted
@@ -217,13 +219,6 @@ const _: () = assert!(offset_of!(SessionResourceFinishPayload, name) == 8);
 const _: () = assert!(offset_of!(SessionResourceFinishPayload, url_path) == 16);
 const _: () = assert!(offset_of!(SessionResourceFinishPayload, error) == 24);
 
-const _: () = assert!(size_of::<SessionCertPayload>() == 32);
-const _: () = assert!(align_of::<SessionCertPayload>() == 8);
-const _: () = assert!(offset_of!(SessionCertPayload, peer) == 0);
-const _: () = assert!(offset_of!(SessionCertPayload, items) == 8);
-const _: () = assert!(offset_of!(SessionCertPayload, count) == 16);
-const _: () = assert!(offset_of!(SessionCertPayload, handler) == 24);
-
 const _: () = assert!(size_of::<BrowserFoundPayload>() == 16);
 const _: () = assert!(align_of::<BrowserFoundPayload>() == 8);
 const _: () = assert!(offset_of!(BrowserFoundPayload, peer) == 0);
@@ -294,51 +289,6 @@ struct SessionResourceFinishPayload {
     error: *mut c_void,
 }
 
-#[repr(C)]
-struct SessionCertPayload {
-    peer: *mut c_void,
-    items: *mut *mut c_void,
-    count: usize,
-    handler: *mut c_void,
-}
-
-#[derive(Default)]
-pub struct CertificateHandle {
-    ptr: Option<*mut c_void>,
-}
-
-impl CertificateHandle {
-    pub fn accept(mut self) {
-        if let Some(ptr) = self.ptr.take() {
-            unsafe { mpc_certificate_handle_respond(ptr, true) };
-        }
-    }
-
-    pub fn reject(mut self) {
-        if let Some(ptr) = self.ptr.take() {
-            unsafe { mpc_certificate_handle_respond(ptr, false) };
-        }
-    }
-}
-
-impl Drop for CertificateHandle {
-    fn drop(&mut self) {
-        if let Some(ptr) = self.ptr.take() {
-            unsafe { mpc_certificate_handle_respond(ptr, false) };
-        }
-    }
-}
-
-unsafe impl Send for CertificateHandle {}
-
-impl std::fmt::Debug for CertificateHandle {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("CertificateHandle")
-            .field("pending", &self.ptr.is_some())
-            .finish()
-    }
-}
-
 /// An event emitted by an [`MCSession`](crate::session::Session) delegate.
 #[non_exhaustive]
 #[derive(Debug)]
@@ -385,22 +335,6 @@ pub enum SessionEvent {
         local_url: Option<PathBuf>,
         /// Error if the transfer failed.
         error: Option<FrameworkError>,
-    },
-    /// Certificate data was received from a peer.
-    ///
-    /// The framework does not validate `items` in any way. Inspect them, then
-    /// call [`CertificateHandle::accept`] to let the peer connect or
-    /// [`CertificateHandle::reject`] to refuse it. Dropping the handle without
-    /// a decision rejects the peer, as does dropping the event unread (for
-    /// example when the stream is dropped or its buffer overflows). Peers
-    /// without a security identity arrive with empty `items` and still need an
-    /// explicit accept.
-    CertificateReceived {
-        /// The peer sending the certificate.
-        peer: PeerId,
-        /// The certificate items (typically `SecCertificate` objects).
-        items: Vec<SecurityIdentityItem>,
-        handle: CertificateHandle,
     },
 }
 
@@ -476,25 +410,6 @@ unsafe extern "C" fn session_event_cb(kind: i32, payload: *const c_void, ctx: *m
                     name,
                     local_url,
                     error,
-                })
-            }
-            5 => {
-                let p = unsafe { &*payload.cast::<SessionCertPayload>() };
-                let handle = CertificateHandle {
-                    ptr: (!p.handler.is_null()).then_some(p.handler),
-                };
-                let items = if p.items.is_null() || p.count == 0 {
-                    vec![]
-                } else {
-                    unsafe { std::slice::from_raw_parts(p.items, p.count) }
-                        .iter()
-                        .map(|&raw| unsafe { SecurityIdentityItem::from_owned_raw(raw) })
-                        .collect()
-                };
-                Some(SessionEvent::CertificateReceived {
-                    peer: unsafe { PeerId::from_owned_raw(p.peer) },
-                    items,
-                    handle,
                 })
             }
             _ => None,
@@ -921,29 +836,16 @@ mod tests {
     use core::ffi::c_void;
     use std::sync::atomic::{AtomicI32, Ordering};
 
-    use super::{
-        AdvertiserEventStream, BrowserEventStream, CertificateHandle, SessionEvent,
-        SessionEventStream,
-    };
+    use super::{AdvertiserEventStream, BrowserEventStream, SessionEventStream};
     use crate::advertiser::{NearbyServiceAdvertiser, NearbyServiceAdvertiserDelegate};
     use crate::browser::{NearbyServiceBrowser, NearbyServiceBrowserDelegate};
+    use crate::ffi;
     use crate::peer::PeerId;
-    use crate::session::{EncryptionPreference, Session, SessionDelegate};
-
-    extern "C" {
-        fn mpc_session_stream_deliver_certificate(
-            handle: *mut c_void,
-            peer: *mut c_void,
-            include_item: bool,
-            decision: unsafe extern "C" fn(*mut c_void, bool),
-            decision_context: *mut c_void,
-        );
-        fn mpc_delegate_identity(object: *mut c_void) -> *mut c_void;
-    }
-
-    fn delegate_of(object: *mut c_void) -> *mut c_void {
-        unsafe { mpc_delegate_identity(object) }
-    }
+    use crate::session::test_support::{
+        delegate_of, deliver_certificate, rejecting_session, session_with, ACCEPTED, PENDING,
+        REJECTED,
+    };
+    use crate::session::{CertificatePolicy, Session, SessionDelegate};
 
     #[allow(clippy::used_underscore_binding)]
     fn session_bridge(stream: &SessionEventStream) -> *mut c_void {
@@ -960,149 +862,36 @@ mod tests {
         stream._handle.bridge_handle
     }
 
-    const PENDING: i32 = -1;
-    const REJECTED: i32 = 0;
-    const ACCEPTED: i32 = 1;
-
-    unsafe extern "C" fn record_decision(context: *mut c_void, accepted: bool) {
-        let decision = unsafe { &*context.cast::<AtomicI32>() };
-        decision.store(i32::from(accepted), Ordering::SeqCst);
-    }
-
-    fn deliver(
-        stream: &SessionEventStream,
-        peer: &PeerId,
-        include_item: bool,
-        decision: &AtomicI32,
-    ) {
-        unsafe {
-            mpc_session_stream_deliver_certificate(
-                session_bridge(stream),
-                peer.as_ptr(),
-                include_item,
-                record_decision,
-                core::ptr::from_ref(decision).cast_mut().cast(),
-            );
-        }
-    }
-
-    fn session(name: &str) -> Session {
-        let peer = PeerId::new(name).expect("peer");
-        Session::new(&peer, EncryptionPreference::Required).expect("session")
-    }
-
-    fn take_certificate(stream: &SessionEventStream) -> (PeerId, usize, CertificateHandle) {
-        match stream.try_next() {
-            Some(SessionEvent::CertificateReceived {
-                peer,
-                items,
-                handle,
-            }) => (peer, items.len(), handle),
-            other => panic!("expected a certificate event, got {other:?}"),
-        }
+    fn remote() -> PeerId {
+        PeerId::new("cert-remote").expect("peer")
     }
 
     #[test]
-    fn accepting_a_certificate_reaches_the_framework_handler() {
-        let decision = AtomicI32::new(PENDING);
-        let remote = PeerId::new("cert-remote").expect("peer");
-        let session = session("cert-accept");
-        let stream = SessionEventStream::subscribe_default(&session);
+    fn a_stream_does_not_bypass_the_certificate_policy() {
+        let rejected = AtomicI32::new(PENDING);
+        let accepted = AtomicI32::new(PENDING);
+        let strict = rejecting_session("stream-policy-strict");
+        let open = session_with("stream-policy-open", CertificatePolicy::AcceptAll);
+        let strict_stream = SessionEventStream::subscribe_default(&strict);
+        let open_stream = SessionEventStream::subscribe_default(&open);
+        assert_eq!(delegate_of(strict.as_ptr()), session_bridge(&strict_stream));
+        assert_eq!(delegate_of(open.as_ptr()), session_bridge(&open_stream));
 
-        deliver(&stream, &remote, true, &decision);
-        let (peer, item_count, handle) = take_certificate(&stream);
-        assert_eq!(peer.display_name(), "cert-remote");
-        assert_eq!(item_count, 1);
-        assert_eq!(decision.load(Ordering::SeqCst), PENDING);
-
-        handle.accept();
-        assert_eq!(decision.load(Ordering::SeqCst), ACCEPTED);
-    }
-
-    #[test]
-    fn rejecting_a_certificate_reaches_the_framework_handler() {
-        let decision = AtomicI32::new(PENDING);
-        let remote = PeerId::new("cert-remote").expect("peer");
-        let session = session("cert-reject");
-        let stream = SessionEventStream::subscribe_default(&session);
-
-        deliver(&stream, &remote, false, &decision);
-        let (_, item_count, handle) = take_certificate(&stream);
-        assert_eq!(item_count, 0);
-        assert_eq!(decision.load(Ordering::SeqCst), PENDING);
-
-        handle.reject();
-        assert_eq!(decision.load(Ordering::SeqCst), REJECTED);
-    }
-
-    #[test]
-    fn dropping_an_undecided_certificate_rejects_the_peer() {
-        let decision = AtomicI32::new(PENDING);
-        let remote = PeerId::new("cert-remote").expect("peer");
-        let session = session("cert-drop");
-        let stream = SessionEventStream::subscribe_default(&session);
-
-        deliver(&stream, &remote, false, &decision);
-        let event = stream.try_next().expect("certificate event");
-        assert_eq!(decision.load(Ordering::SeqCst), PENDING);
-
-        drop(event);
-        assert_eq!(decision.load(Ordering::SeqCst), REJECTED);
-    }
-
-    #[test]
-    fn dropping_the_stream_rejects_buffered_certificates() {
-        let decision = AtomicI32::new(PENDING);
-        let remote = PeerId::new("cert-remote").expect("peer");
-        let session = session("cert-stream-drop");
-        let stream = SessionEventStream::subscribe_default(&session);
-
-        deliver(&stream, &remote, true, &decision);
-        assert_eq!(stream.buffered_count(), 1);
-        assert_eq!(decision.load(Ordering::SeqCst), PENDING);
-
-        drop(stream);
-        assert_eq!(decision.load(Ordering::SeqCst), REJECTED);
-    }
-
-    #[test]
-    fn a_certificate_evicted_from_a_full_buffer_is_rejected() {
-        let first = AtomicI32::new(PENDING);
-        let second = AtomicI32::new(PENDING);
-        let remote = PeerId::new("cert-remote").expect("peer");
-        let session = session("cert-overflow");
-        let stream = SessionEventStream::subscribe(&session, 1);
-
-        deliver(&stream, &remote, false, &first);
-        deliver(&stream, &remote, false, &second);
-        assert_eq!(first.load(Ordering::SeqCst), REJECTED);
-        assert_eq!(second.load(Ordering::SeqCst), PENDING);
-
-        let (_, _, handle) = take_certificate(&stream);
-        handle.accept();
-        assert_eq!(second.load(Ordering::SeqCst), ACCEPTED);
-        assert_eq!(first.load(Ordering::SeqCst), REJECTED);
-    }
-
-    #[test]
-    fn an_empty_certificate_handle_is_inert() {
-        let handle = CertificateHandle::default();
-        assert_eq!(
-            format!("{handle:?}"),
-            "CertificateHandle { pending: false }"
-        );
-        handle.accept();
-        CertificateHandle::default().reject();
-        drop(CertificateHandle::default());
+        deliver_certificate(&strict, &remote(), true, &rejected);
+        deliver_certificate(&open, &remote(), true, &accepted);
+        assert_eq!(rejected.load(Ordering::SeqCst), REJECTED);
+        assert_eq!(accepted.load(Ordering::SeqCst), ACCEPTED);
+        assert_eq!(strict_stream.buffered_count(), 0);
     }
 
     #[test]
     fn dropping_a_session_stream_restores_the_registered_delegate() {
-        let mut session = session("delegate-restore");
-        assert!(delegate_of(session.as_ptr()).is_null());
+        let mut session = rejecting_session("delegate-restore");
+        let policy = delegate_of(session.as_ptr());
+        assert!(!policy.is_null());
         session.set_callbacks(SessionDelegate::new());
         let sync_delegate = delegate_of(session.as_ptr());
-        assert!(!sync_delegate.is_null());
+        assert_ne!(sync_delegate, policy);
 
         let stream = SessionEventStream::subscribe_default(&session);
         assert_eq!(delegate_of(session.as_ptr()), session_bridge(&stream));
@@ -1110,16 +899,15 @@ mod tests {
         assert_eq!(delegate_of(session.as_ptr()), sync_delegate);
 
         session.clear_delegate();
-        assert!(delegate_of(session.as_ptr()).is_null());
+        assert_eq!(delegate_of(session.as_ptr()), policy);
     }
 
     #[test]
     fn dropping_a_session_stream_keeps_a_delegate_installed_later() {
-        let mut session = session("delegate-later");
+        let mut session = rejecting_session("delegate-later");
         let stream = SessionEventStream::subscribe_default(&session);
         session.set_callbacks(SessionDelegate::new());
         let sync_delegate = delegate_of(session.as_ptr());
-        assert!(!sync_delegate.is_null());
         assert_ne!(sync_delegate, session_bridge(&stream));
 
         drop(stream);
@@ -1128,7 +916,8 @@ mod tests {
 
     #[test]
     fn clearing_the_session_delegate_keeps_a_stream_installed_later() {
-        let mut session = session("delegate-clear");
+        let mut session = rejecting_session("delegate-clear");
+        let policy = delegate_of(session.as_ptr());
         session.set_callbacks(SessionDelegate::new());
         let stream = SessionEventStream::subscribe_default(&session);
 
@@ -1136,12 +925,13 @@ mod tests {
         assert_eq!(delegate_of(session.as_ptr()), session_bridge(&stream));
 
         drop(stream);
-        assert!(delegate_of(session.as_ptr()).is_null());
+        assert_eq!(delegate_of(session.as_ptr()), policy);
     }
 
     #[test]
     fn nested_session_streams_unwind_in_either_order() {
-        let session = session("delegate-nested");
+        let session = rejecting_session("delegate-nested");
+        let policy = delegate_of(session.as_ptr());
 
         let outer = SessionEventStream::subscribe_default(&session);
         let inner = SessionEventStream::subscribe_default(&session);
@@ -1150,7 +940,7 @@ mod tests {
         drop(inner);
         assert_eq!(delegate_of(session.as_ptr()), outer_bridge);
         drop(outer);
-        assert!(delegate_of(session.as_ptr()).is_null());
+        assert_eq!(delegate_of(session.as_ptr()), policy);
 
         let outer = SessionEventStream::subscribe_default(&session);
         let inner = SessionEventStream::subscribe_default(&session);
@@ -1158,23 +948,28 @@ mod tests {
         drop(outer);
         assert_eq!(delegate_of(session.as_ptr()), inner_bridge);
         drop(inner);
-        assert!(delegate_of(session.as_ptr()).is_null());
+        assert_eq!(delegate_of(session.as_ptr()), policy);
     }
 
     #[test]
-    fn dropping_a_clone_keeps_the_delegate_another_clone_installed() {
-        let mut original = session("delegate-clone");
+    fn dropping_one_handle_keeps_the_delegate_another_handle_installed() {
+        let decision = AtomicI32::new(PENDING);
+        let mut original = rejecting_session("delegate-alias");
+        let policy = delegate_of(original.as_ptr());
         original.set_callbacks(SessionDelegate::new());
-        let mut clone = original.clone();
-        clone.set_callbacks(SessionDelegate::new());
-        let clone_delegate = delegate_of(clone.as_ptr());
-        assert!(!clone_delegate.is_null());
+        let mut alias =
+            unsafe { Session::from_owned_raw(ffi::core::mpc_object_retain(original.as_ptr())) };
+        alias.set_callbacks(SessionDelegate::new());
+        let alias_delegate = delegate_of(alias.as_ptr());
+        assert_ne!(alias_delegate, policy);
 
         drop(original);
-        assert_eq!(delegate_of(clone.as_ptr()), clone_delegate);
+        assert_eq!(delegate_of(alias.as_ptr()), alias_delegate);
 
-        clone.clear_delegate();
-        assert!(delegate_of(clone.as_ptr()).is_null());
+        alias.clear_delegate();
+        assert_eq!(delegate_of(alias.as_ptr()), policy);
+        deliver_certificate(&alias, &remote(), true, &decision);
+        assert_eq!(decision.load(Ordering::SeqCst), REJECTED);
     }
 
     #[test]

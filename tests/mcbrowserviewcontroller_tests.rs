@@ -1,13 +1,18 @@
 use multipeerconnectivity::{
     session_maximum_number_of_peers, session_minimum_number_of_peers, BrowserViewController,
-    BrowserViewControllerDelegate, EncryptionPreference, PeerId, Result, Session,
+    BrowserViewControllerDelegate, CertificatePolicy, CertificateRequest, EncryptionPreference,
+    PeerId, Result, Session,
 };
 
 #[test]
 #[ignore = "MCBrowserViewController is UI-driven; run manually from a main-thread harness"]
 fn browser_view_controller_roundtrips_properties() -> Result<()> {
     let peer = PeerId::new("doom-fish-ui")?;
-    let session = Session::new(&peer, EncryptionPreference::Required)?;
+    let session = Session::new(
+        &peer,
+        EncryptionPreference::Required,
+        CertificatePolicy::Verify(Box::new(CertificateRequest::reject)),
+    )?;
     let mut controller = BrowserViewController::new_with_service_type("doom-chat", &session)?;
 
     controller.set_callbacks(
