@@ -230,11 +230,21 @@ func validateServiceType(
     return true
 }
 
-func onMain<T>(_ work: @escaping () -> T) -> T {
-    if Thread.isMainThread {
-        return work()
+func requireMainThread(
+    _ errorOut: UnsafeMutablePointer<UnsafeMutableRawPointer?>?,
+    _ typeName: String
+) -> Bool {
+    guard Thread.isMainThread else {
+        writeErrorOut(
+            errorOut,
+            BridgeErrorBox(
+                kind: MPC_ERROR_KIND_MAIN_THREAD_REQUIRED,
+                message: "\(typeName) must be created and used on the main thread"
+            )
+        )
+        return false
     }
-    return DispatchQueue.main.sync(execute: work)
+    return true
 }
 
 @_cdecl("mpc_string_free")

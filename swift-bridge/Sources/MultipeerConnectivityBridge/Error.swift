@@ -5,6 +5,7 @@ import MultipeerConnectivity
 let MPC_ERROR_KIND_INVALID_ARGUMENT: Int32 = 1
 let MPC_ERROR_KIND_OPERATION_FAILED: Int32 = 2
 let MPC_ERROR_KIND_FRAMEWORK: Int32 = 3
+let MPC_ERROR_KIND_MAIN_THREAD_REQUIRED: Int32 = 4
 
 final class BridgeErrorBox: NSObject {
     let kind: Int32

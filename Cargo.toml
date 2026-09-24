@@ -48,6 +48,14 @@ serde_json = "1"
 [dev-dependencies]
 pollster = "0.3"
 
+[[test]]
+name = "mcadvertiserassistant_tests"
+harness = false
+
+[[test]]
+name = "mcbrowserviewcontroller_tests"
+harness = false
+
 [package.metadata.docs.rs]
 all-features = true
 default-target = "aarch64-apple-darwin"

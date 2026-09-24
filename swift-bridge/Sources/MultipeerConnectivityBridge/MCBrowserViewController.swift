@@ -12,44 +12,43 @@ public func mpc_browser_view_controller_create_with_service_type(
     _ sessionPtr: UnsafeMutableRawPointer,
     _ errorOut: UnsafeMutablePointer<UnsafeMutableRawPointer?>?
 ) -> UnsafeMutableRawPointer? {
+    guard requireMainThread(errorOut, "MCBrowserViewController") else { return nil }
     let type = copyCString(serviceType)
     guard validateServiceType(type, errorOut: errorOut) else { return nil }
-    return onMain {
-        _ = NSApplication.shared
-        return retainObject(MCBrowserViewController(serviceType: type, session: session(sessionPtr)))
-    }
+    _ = NSApplication.shared
+    return retainObject(MCBrowserViewController(serviceType: type, session: session(sessionPtr)))
 }
 
 @_cdecl("mpc_browser_view_controller_create_with_browser")
 public func mpc_browser_view_controller_create_with_browser(
     _ browserPtr: UnsafeMutableRawPointer,
-    _ sessionPtr: UnsafeMutableRawPointer
+    _ sessionPtr: UnsafeMutableRawPointer,
+    _ errorOut: UnsafeMutablePointer<UnsafeMutableRawPointer?>?
 ) -> UnsafeMutableRawPointer? {
-    onMain {
-        _ = NSApplication.shared
-        return retainObject(MCBrowserViewController(browser: browser(browserPtr), session: session(sessionPtr)))
-    }
+    guard requireMainThread(errorOut, "MCBrowserViewController") else { return nil }
+    _ = NSApplication.shared
+    return retainObject(MCBrowserViewController(browser: browser(browserPtr), session: session(sessionPtr)))
 }
 
 @_cdecl("mpc_browser_view_controller_copy_browser")
 public func mpc_browser_view_controller_copy_browser(
     _ controllerPtr: UnsafeMutableRawPointer
 ) -> UnsafeMutableRawPointer? {
-    onMain { retainObject(browserViewController(controllerPtr).browser) }
+    retainObject(browserViewController(controllerPtr).browser)
 }
 
 @_cdecl("mpc_browser_view_controller_copy_session")
 public func mpc_browser_view_controller_copy_session(
     _ controllerPtr: UnsafeMutableRawPointer
 ) -> UnsafeMutableRawPointer? {
-    onMain { retainObject(browserViewController(controllerPtr).session) }
+    retainObject(browserViewController(controllerPtr).session)
 }
 
 @_cdecl("mpc_browser_view_controller_minimum_number_of_peers")
 public func mpc_browser_view_controller_minimum_number_of_peers(
     _ controllerPtr: UnsafeMutableRawPointer
 ) -> Int {
-    onMain { browserViewController(controllerPtr).minimumNumberOfPeers }
+    browserViewController(controllerPtr).minimumNumberOfPeers
 }
 
 @_cdecl("mpc_browser_view_controller_set_minimum_number_of_peers")
@@ -57,16 +56,14 @@ public func mpc_browser_view_controller_set_minimum_number_of_peers(
     _ controllerPtr: UnsafeMutableRawPointer,
     _ value: Int
 ) {
-    onMain {
-        browserViewController(controllerPtr).minimumNumberOfPeers = value
-    }
+    browserViewController(controllerPtr).minimumNumberOfPeers = value
 }
 
 @_cdecl("mpc_browser_view_controller_maximum_number_of_peers")
 public func mpc_browser_view_controller_maximum_number_of_peers(
     _ controllerPtr: UnsafeMutableRawPointer
 ) -> Int {
-    onMain { browserViewController(controllerPtr).maximumNumberOfPeers }
+    browserViewController(controllerPtr).maximumNumberOfPeers
 }
 
 @_cdecl("mpc_browser_view_controller_set_maximum_number_of_peers")
@@ -74,9 +71,7 @@ public func mpc_browser_view_controller_set_maximum_number_of_peers(
     _ controllerPtr: UnsafeMutableRawPointer,
     _ value: Int
 ) {
-    onMain {
-        browserViewController(controllerPtr).maximumNumberOfPeers = value
-    }
+    browserViewController(controllerPtr).maximumNumberOfPeers = value
 }
 
 public typealias MpcBrowserViewControllerCallback = @convention(c) (UnsafeMutableRawPointer?) -> Void
@@ -151,21 +146,19 @@ public func mpc_browser_view_controller_set_delegate(
     _ contextRetain: MpcContextRetainCallback,
     _ contextRelease: MpcContextRetainCallback
 ) {
-    onMain {
-        let value = browserViewController(controllerPtr)
-        let delegate = BrowserViewControllerDelegateBox(
-            context: context,
-            finishCallback: finishCallback,
-            cancelCallback: cancelCallback,
-            shouldPresentCallback: shouldPresentCallback,
-            contextRetain: contextRetain,
-            contextRelease: contextRelease
-        )
-        value.delegate = delegate
-        browserViewControllerDelegatesLock.lock()
-        browserViewControllerDelegates[ObjectIdentifier(value)] = delegate
-        browserViewControllerDelegatesLock.unlock()
-    }
+    let value = browserViewController(controllerPtr)
+    let delegate = BrowserViewControllerDelegateBox(
+        context: context,
+        finishCallback: finishCallback,
+        cancelCallback: cancelCallback,
+        shouldPresentCallback: shouldPresentCallback,
+        contextRetain: contextRetain,
+        contextRelease: contextRelease
+    )
+    value.delegate = delegate
+    browserViewControllerDelegatesLock.lock()
+    browserViewControllerDelegates[ObjectIdentifier(value)] = delegate
+    browserViewControllerDelegatesLock.unlock()
 }
 
 @_cdecl("mpc_browser_view_controller_clear_delegate")
@@ -173,16 +166,14 @@ public func mpc_browser_view_controller_clear_delegate(
     _ controllerPtr: UnsafeMutableRawPointer,
     _ context: UnsafeMutableRawPointer?
 ) {
-    onMain {
-        let value = browserViewController(controllerPtr)
-        let key = ObjectIdentifier(value)
-        browserViewControllerDelegatesLock.lock()
-        let removed = browserViewControllerDelegates[key]?.context == context
-            ? browserViewControllerDelegates.removeValue(forKey: key)
-            : nil
-        browserViewControllerDelegatesLock.unlock()
-        if let removed, value.delegate === removed {
-            value.delegate = nil
-        }
+    let value = browserViewController(controllerPtr)
+    let key = ObjectIdentifier(value)
+    browserViewControllerDelegatesLock.lock()
+    let removed = browserViewControllerDelegates[key]?.context == context
+        ? browserViewControllerDelegates.removeValue(forKey: key)
+        : nil
+    browserViewControllerDelegatesLock.unlock()
+    if let removed, value.delegate === removed {
+        value.delegate = nil
     }
 }

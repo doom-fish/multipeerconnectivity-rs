@@ -1181,10 +1181,7 @@ mod tests {
     #[test]
     fn dropping_a_request_rejects_the_peer() {
         let decision = AtomicI32::new(PENDING);
-        let session = session_with(
-            "policy-drop",
-            CertificatePolicy::Verify(Box::new(drop)),
-        );
+        let session = session_with("policy-drop", CertificatePolicy::Verify(Box::new(drop)));
         deliver_certificate(&session, &remote(), false, &decision);
         assert_eq!(decision.load(Ordering::SeqCst), REJECTED);
     }

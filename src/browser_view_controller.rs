@@ -106,6 +106,7 @@ pub struct BrowserViewController {
 impl BrowserViewController {
     /// Creates a `MultipeerConnectivity` browser view controller from a service type.
     pub fn new_with_service_type(service_type: impl AsRef<str>, session: &Session) -> Result<Self> {
+        crate::error::require_main_thread("MCBrowserViewController")?;
         let service_type = crate::validation::service_type_cstring(service_type.as_ref())?;
         let mut error = ptr::null_mut();
         let raw = unsafe {
@@ -123,18 +124,21 @@ impl BrowserViewController {
     }
 
     /// Creates a `MultipeerConnectivity` browser view controller from an existing browser.
-    pub fn new_with_browser(browser: &NearbyServiceBrowser, session: &Session) -> Self {
+    pub fn new_with_browser(browser: &NearbyServiceBrowser, session: &Session) -> Result<Self> {
+        crate::error::require_main_thread("MCBrowserViewController")?;
+        let mut error = ptr::null_mut();
         let raw = unsafe {
             ffi::browser_view_controller::mpc_browser_view_controller_create_with_browser(
                 browser.as_ptr(),
                 session.as_ptr(),
+                &raw mut error,
             )
         };
-        let raw = NonNull::new(raw).expect("browser view controller raw pointer must not be null");
-        Self {
+        let raw = NonNull::new(raw).ok_or_else(|| take_error(error))?;
+        Ok(Self {
             raw,
             delegate_state: None,
-        }
+        })
     }
 
     pub(crate) unsafe fn from_owned_raw(raw: *mut c_void) -> Self {

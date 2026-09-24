@@ -144,6 +144,7 @@ pub enum MultipeerError {
     OperationFailed(String),
     /// Represents a framework error reported by `MultipeerConnectivity`.
     Framework(FrameworkError),
+    MainThreadRequired(String),
 }
 
 impl fmt::Display for MultipeerError {
@@ -152,6 +153,7 @@ impl fmt::Display for MultipeerError {
             Self::InvalidArgument(message) => write!(f, "invalid argument: {message}"),
             Self::OperationFailed(message) => write!(f, "operation failed: {message}"),
             Self::Framework(error) => write!(f, "framework error: {error}"),
+            Self::MainThreadRequired(message) => write!(f, "main thread required: {message}"),
         }
     }
 }
@@ -214,6 +216,9 @@ pub(crate) fn take_error(ptr: *mut c_void) -> MultipeerError {
             info.code,
             info.description,
         )),
+        ffi::error::MPC_ERROR_KIND_MAIN_THREAD_REQUIRED => {
+            MultipeerError::MainThreadRequired(info.description)
+        }
         _ => MultipeerError::OperationFailed(info.description),
     }
 }
@@ -235,4 +240,17 @@ pub(crate) fn take_optional_framework_error(ptr: *mut c_void) -> Option<Framewor
 /// Returns the `MultipeerConnectivity` `MCErrorDomain` string.
 pub fn mc_error_domain() -> String {
     copy_and_free_string(unsafe { ffi::error::mpc_mc_error_domain() })
+}
+
+extern "C" {
+    fn pthread_main_np() -> core::ffi::c_int;
+}
+
+pub(crate) fn require_main_thread(type_name: &str) -> Result<()> {
+    if unsafe { pthread_main_np() } == 0 {
+        return Err(MultipeerError::MainThreadRequired(format!(
+            "{type_name} must be created and used on the main thread"
+        )));
+    }
+    Ok(())
 }

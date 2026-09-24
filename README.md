@@ -135,7 +135,7 @@ cargo run --example 10_async_advertiser_stream --features async
 - `Session::with_security_identity(...)` keeps the existing raw-pointer escape hatch for advanced Security.framework users.
 - `Session::with_security_identity_items(...)` accepts identity items previously returned by the framework.
 - `Session::nearby_connection_data_for_peer(...)`, `connect_peer(...)`, and `cancel_connect_peer(...)` cover Apple's custom-discovery extension.
-- `BrowserViewController` and `AdvertiserAssistant` are created on the main thread inside the Swift bridge so they can be used safely from tests/examples.
+- `BrowserViewController` and `AdvertiserAssistant` wrap `AppKit` UI objects: their constructors return `MultipeerError::MainThreadRequired` off the main thread, and both types are `!Send`, so every later call also happens on the main thread.
 - UI/network-sensitive behavior is intentionally left out of the examples so they exit successfully on a headless macOS machine.
 
 ## Coverage matrix

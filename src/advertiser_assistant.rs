@@ -89,6 +89,7 @@ impl AdvertiserAssistant {
         discovery_info: Option<&HashMap<String, String>>,
         session: &Session,
     ) -> Result<Self> {
+        crate::error::require_main_thread("MCAdvertiserAssistant")?;
         let discovery_info_json = crate::validation::discovery_info_cstring(discovery_info)?;
         let service_type = crate::validation::service_type_cstring(service_type.as_ref())?;
         let mut error = ptr::null_mut();
