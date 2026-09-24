@@ -227,13 +227,6 @@ impl NearbyServiceBrowser {
     }
 }
 
-impl Clone for NearbyServiceBrowser {
-    fn clone(&self) -> Self {
-        let raw = unsafe { ffi::core::mpc_object_retain(self.raw.as_ptr()) };
-        unsafe { Self::from_owned_raw(raw) }
-    }
-}
-
 impl Drop for NearbyServiceBrowser {
     fn drop(&mut self) {
         self.clear_delegate();

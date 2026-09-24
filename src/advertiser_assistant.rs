@@ -110,13 +110,6 @@ impl AdvertiserAssistant {
         })
     }
 
-    pub(crate) unsafe fn from_owned_raw(raw: *mut c_void) -> Self {
-        Self {
-            raw: NonNull::new(raw).expect("assistant raw pointer must not be null"),
-            delegate_state: None,
-        }
-    }
-
     #[must_use]
     /// Returns the `MultipeerConnectivity` session managed by this assistant.
     pub fn session(&self) -> Session {
@@ -204,13 +197,6 @@ impl AdvertiserAssistant {
                 );
             }
         }
-    }
-}
-
-impl Clone for AdvertiserAssistant {
-    fn clone(&self) -> Self {
-        let raw = unsafe { ffi::core::mpc_object_retain(self.raw.as_ptr()) };
-        unsafe { Self::from_owned_raw(raw) }
     }
 }
 

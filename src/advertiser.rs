@@ -142,13 +142,6 @@ impl NearbyServiceAdvertiser {
         })
     }
 
-    pub(crate) unsafe fn from_owned_raw(raw: *mut c_void) -> Self {
-        Self {
-            raw: NonNull::new(raw).expect("advertiser raw pointer must not be null"),
-            delegate_state: None,
-        }
-    }
-
     #[must_use]
     /// Returns the local `MultipeerConnectivity` peer identifier.
     pub fn my_peer_id(&self) -> PeerId {
@@ -250,13 +243,6 @@ impl NearbyServiceAdvertiser {
     #[cfg(feature = "async")]
     pub(crate) const fn as_ptr(&self) -> *mut c_void {
         self.raw.as_ptr()
-    }
-}
-
-impl Clone for NearbyServiceAdvertiser {
-    fn clone(&self) -> Self {
-        let raw = unsafe { ffi::core::mpc_object_retain(self.raw.as_ptr()) };
-        unsafe { Self::from_owned_raw(raw) }
     }
 }
 
