@@ -315,6 +315,56 @@ public typealias MpcResourceSendCompletionCallback = @convention(c) (
     UnsafeMutableRawPointer?
 ) -> Void
 
+final class MpcResourceSendCompletion {
+    private let lock = NSLock()
+    private let context: UnsafeMutableRawPointer?
+    private let callback: MpcResourceSendCompletionCallback
+    private var isStarted = false
+    private var isAbandoned = false
+    private var isFinished = false
+    private var earlyError: Error?
+
+    init(context: UnsafeMutableRawPointer?, callback: MpcResourceSendCompletionCallback) {
+        self.context = context
+        self.callback = callback
+    }
+
+    func finish(_ error: Error?) {
+        lock.lock()
+        guard !isFinished, !isAbandoned else {
+            lock.unlock()
+            return
+        }
+        isFinished = true
+        guard isStarted else {
+            earlyError = error
+            lock.unlock()
+            return
+        }
+        lock.unlock()
+        callback(context, retainedNSError(error))
+    }
+
+    func start() {
+        lock.lock()
+        isStarted = true
+        let finishedEarly = isFinished
+        let error = earlyError
+        earlyError = nil
+        lock.unlock()
+        if finishedEarly {
+            callback(context, retainedNSError(error))
+        }
+    }
+
+    func abandon() {
+        lock.lock()
+        isAbandoned = true
+        earlyError = nil
+        lock.unlock()
+    }
+}
+
 @_cdecl("mpc_session_send_resource")
 public func mpc_session_send_resource(
     _ sessionPtr: UnsafeMutableRawPointer,
@@ -326,20 +376,23 @@ public func mpc_session_send_resource(
     _ errorOut: UnsafeMutablePointer<UnsafeMutableRawPointer?>?
 ) -> UnsafeMutableRawPointer? {
     let url = URL(fileURLWithPath: copyCString(filePath))
+    let sendCompletion = completion.map { MpcResourceSendCompletion(context: context, callback: $0) }
     let progress = session(sessionPtr).sendResource(
         at: url,
         withName: copyCString(resourceName),
         toPeer: peer(peerPtr)
     ) { error in
-        completion?(context, retainedNSError(error))
+        sendCompletion?.finish(error)
     }
     guard let progress else {
+        sendCompletion?.abandon()
         writeErrorOut(
             errorOut,
             BridgeErrorBox(kind: MPC_ERROR_KIND_OPERATION_FAILED, message: "sendResource returned nil")
         )
         return nil
     }
+    sendCompletion?.start()
     return retainObject(progress)
 }
 
